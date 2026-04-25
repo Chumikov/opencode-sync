@@ -55,8 +55,8 @@ function runGit(args: string[], cwd?: string): string {
     const stderr = err.stderr?.toString()?.trim() || "";
     const msg = stderr || err.message;
 
-    // Пробрасываем понятное сообщение
-    throw new Error(`git ${args.join(" ")}: ${msg}`);
+    const safeArgs = args.map((a) => (a.includes("@") || a.startsWith("http") ? maskUrl(a) : a));
+    throw new Error(`git ${safeArgs.join(" ")}: ${msg}`);
   }
 }
 
@@ -233,7 +233,7 @@ export function push(localPath: string, branch: string, deviceName: string): voi
 
 // Маскирует URL репозитория для логов (скрывает учётные данные).
 // git@... host скрыт, https://user:pass@... учётные данные скрыты.
-function maskUrl(url: string): string {
+export function maskUrl(url: string): string {
   try {
     // SSH-формат: git@host:user/repo.git
     if (url.startsWith("git@")) {

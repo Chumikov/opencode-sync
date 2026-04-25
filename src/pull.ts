@@ -122,7 +122,7 @@ export async function pullSessions(options?: { dryRun?: boolean }): Promise<Pull
     const isLocal = localMap.has(sessionId);
 
     // Проверяем — нужно ли импортировать
-    if (!isRemoteNewer(filePath, localMap)) {
+    if (!isRemoteNewer(fileData, localMap)) {
       result.skipped++;
       continue;
     }

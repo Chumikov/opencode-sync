@@ -11,7 +11,7 @@
  *   - Storage: $XDG_DATA_HOME/opencode-sync/
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, hostname } from "node:os";
 
@@ -116,6 +116,7 @@ export function saveConfig(config: SyncConfig): void {
   }
 
   writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  chmodSync(CONFIG_FILE_PATH, 0o600);
   console.log(`[sync] Конфигурация сохранена в ${CONFIG_FILE_PATH}`);
 }
 
@@ -127,16 +128,4 @@ export function saveConfig(config: SyncConfig): void {
  */
 export function sessionsDir(localPath: string): string {
   return join(localPath, "sessions");
-}
-
-/**
- * Возвращает путь к конкретному JSON-файлу сессии.
- *
- * @param localPath  — путь к локальному клону sync-репозитория
- * @param projectId  — ID проекта (хеш первого git-коммита или "global")
- * @param sessionId  — ID сессии
- * @returns Абсолютный путь к файлу сессии
- */
-export function sessionFilePath(localPath: string, projectId: string, sessionId: string): string {
-  return join(sessionsDir(localPath), projectId, `${sessionId}.json`);
 }

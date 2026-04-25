@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig, CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH } from "./config.js";
 import { pushSessions } from "./push.js";
 import { pullSessions } from "./pull.js";
-import { isGitRepo } from "./git.js";
+import { isGitRepo, maskUrl } from "./git.js";
 
 // ─── Версия из package.json ──────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ program
     // Сохраняем конфигурацию
     saveConfig(config);
 
-    console.log(`  Репозиторий:  ${opts.repo}`);
+    console.log(`  Репозиторий:  ${maskUrl(opts.repo)}`);
     console.log(`  Устройство:   ${opts.device}`);
     console.log(`  Локальный путь: ${opts.path}`);
     console.log(`  Ветка:        ${opts.branch}`);
@@ -89,7 +89,7 @@ program
   .option("--dry-run", "Показать что будет экспортировано без реального push")
   .action(async (opts) => {
     try {
-      const result = await pushSessions({ dryRun: opts.dryRun });
+      await pushSessions({ dryRun: opts.dryRun });
       if (opts.dryRun) {
         console.log("\n[dry-run] Режим пробного запуска, изменения не применены");
       }
@@ -107,7 +107,7 @@ program
   .option("--dry-run", "Показать что будет импортировано без реального импорта")
   .action(async (opts) => {
     try {
-      const result = await pullSessions({ dryRun: opts.dryRun });
+      await pullSessions({ dryRun: opts.dryRun });
       if (opts.dryRun) {
         console.log("\n[dry-run] Режим пробного запуска, изменения не применены");
       }
@@ -173,7 +173,7 @@ program
       console.log("╚══════════════════════════════════════════════╝");
       console.log();
       console.log(`  Конфиг:        ${CONFIG_FILE_PATH}`);
-      console.log(`  Репозиторий:   ${config.repo}`);
+      console.log(`  Репозиторий:   ${maskUrl(config.repo)}`);
       console.log(`  Устройство:    ${config.deviceName}`);
       console.log(`  Локальный путь: ${config.localPath}`);
       console.log(`  Ветка:         ${config.branch}`);
@@ -188,4 +188,4 @@ program
 
 // ─── Запуск ──────────────────────────────────────────────────────────────────
 
-program.parse(process.argv);
+program.parseAsync(process.argv);

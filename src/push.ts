@@ -20,6 +20,7 @@
  *   - Маскируем URL репозитория в логах.
  */
 
+import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import {
   listSessions,
@@ -60,7 +61,7 @@ export async function pushSessions(options?: { dryRun?: boolean }): Promise<Push
     const sessionId = session.id;
 
     // Определяем путь к файлу сессии
-    const filePath = `${sessDir}/${projectId}/${sessionId}.json`;
+    const filePath = join(sessDir, projectId, `${sessionId}.json`);
 
     // Проверяем — нужно ли экспортировать (incremental)
     if (!isLocalNewer(session, filePath)) {

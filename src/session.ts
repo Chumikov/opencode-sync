@@ -118,14 +118,6 @@ function getUpdated(data: SessionExport): number {
   return (data.info as any).updated || 0;
 }
 
-/**
- * Безопасное извлечение time_created из SessionExport.
- */
-function getCreated(data: SessionExport): number {
-  if (data.info.time?.created) return data.info.time.created;
-  return (data.info as any).created || 0;
-}
-
 /** Результат операции push */
 export interface PushResult {
   exported: number;
@@ -350,18 +342,13 @@ export function isLocalNewer(local: SessionInfo, filePath: string): boolean {
  * @returns true если remote новее (нужно импортировать)
  */
 export function isRemoteNewer(
-  filePath: string,
+  fileData: SessionExport,
   localMap: Map<string, SessionInfo>,
 ): boolean {
-  const fileData = readSessionFromFile(filePath);
-  if (!fileData) return false;
-
   const sessionId = fileData.info.id;
   const localSession = localMap.get(sessionId);
 
-  // Нет локально — нужно импортировать
   if (!localSession) return true;
 
-  // Импортируем только если remote новее
   return fileData.info.time.updated > localSession.updated;
 }
