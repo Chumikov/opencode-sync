@@ -1,0 +1,142 @@
+/**
+ * @file config.ts
+ * @description Конфигурация opencode-sync.
+ *
+ * Читает настройки из файла ~/.config/opencode/sync.json или
+ * из переменных окружения OPENCODE_SYNC_*. Переменные окружения
+ * имеют приоритет над файлом конфигурации.
+ *
+ * Пути следуют XDG Base Directory Specification:
+ *   - Config:  $XDG_CONFIG_HOME/opencode/sync.json
+ *   - Storage: $XDG_DATA_HOME/opencode-sync/
+ */
+
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { homedir, hostname } from "node:os";
+
+// ─── XDG-пути по умолчанию ──────────────────────────────────────────────────
+
+/**
+ * Базовая директория для данных XDG.
+ * $XDG_DATA_HOME или ~/.local/share
+ */
+const xdgDataHome = process.env.XDG_DATA_HOME || join(homedir(), ".local", "share");
+
+/**
+ * Базовая директория для конфигурации XDG.
+ * $XDG_CONFIG_HOME или ~/.config
+ */
+const xdgConfigHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+
+// ─── Типы ────────────────────────────────────────────────────────────────────
+
+/** Конфигурация opencode-sync, хранимая в sync.json */
+export interface SyncConfig {
+  /** URL git-репозитория для синхронизации (SSH или HTTPS) */
+  repo: string;
+
+  /** Имя текущего устройства (используется в коммит-сообщениях) */
+  deviceName: string;
+
+  /** Локальный путь к клону sync-репозитория (абсолютный) */
+  localPath: string;
+
+  /** Ветка в sync-репозитории */
+  branch: string;
+}
+
+// ─── Значения по умолчанию ───────────────────────────────────────────────────
+
+/** Путь к файлу конфигурации */
+export const CONFIG_FILE_PATH = join(xdgConfigHome, "opencode", "sync.json");
+
+/** Путь к локальному клону sync-репозитория по умолчанию */
+export const DEFAULT_LOCAL_PATH = join(xdgDataHome, "opencode-sync");
+
+// ─── Чтение конфигурации ─────────────────────────────────────────────────────
+
+/**
+ * Загружает конфигурацию opencode-sync.
+ *
+ * Приоритет источников (от высокого к низкому):
+ *   1. Переменные окружения OPENCODE_SYNC_*
+ *   2. Файл ~/.config/opencode/sync.json
+ *   3. Значения по умолчанию
+ *
+ * @returns Скомбинированная конфигурация
+ * @throws Error если repo не указан ни в файле, ни через env
+ */
+export function loadConfig(): SyncConfig {
+  // Сначала пробуем прочитать файл конфигурации
+  let fileConfig: Partial<SyncConfig> = {};
+  if (existsSync(CONFIG_FILE_PATH)) {
+    try {
+      const raw = readFileSync(CONFIG_FILE_PATH, "utf-8");
+      fileConfig = JSON.parse(raw);
+    } catch {
+      console.warn(`[sync] Не удалось прочитать ${CONFIG_FILE_PATH}, используем env-переменные`);
+    }
+  }
+
+  // Склеиваем: env > файл > default
+  const repo = process.env.OPENCODE_SYNC_REPO || fileConfig.repo;
+  if (!repo) {
+    throw new Error(
+      "Не указан git-репозиторий.\n" +
+        "  Установите OPENCODE_SYNC_REPO или добавьте \"repo\" в " +
+        CONFIG_FILE_PATH,
+    );
+  }
+
+  const deviceName =
+    process.env.OPENCODE_SYNC_DEVICE ||
+    fileConfig.deviceName ||
+    hostname();
+
+  const localPath = resolve(
+    process.env.OPENCODE_SYNC_PATH || fileConfig.localPath || DEFAULT_LOCAL_PATH,
+  );
+
+  const branch = fileConfig.branch || "main";
+
+  return { repo, deviceName, localPath, branch };
+}
+
+// ─── Сохранение конфигурации ─────────────────────────────────────────────────
+
+/**
+ * Сохраняет конфигурацию в файл.
+ * Создаёт родительские директории при необходимости.
+ */
+export function saveConfig(config: SyncConfig): void {
+  const dir = join(xdgConfigHome, "opencode");
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  console.log(`[sync] Конфигурация сохранена в ${CONFIG_FILE_PATH}`);
+}
+
+// ─── Структура директорий sync-репозитория ───────────────────────────────────
+
+/**
+ * Возвращает путь к папке сессий внутри sync-репозитория.
+ * Сессии хранятся по одному файлу: sessions/{project_id}/{session_id}.json
+ */
+export function sessionsDir(localPath: string): string {
+  return join(localPath, "sessions");
+}
+
+/**
+ * Возвращает путь к конкретному JSON-файлу сессии.
+ *
+ * @param localPath  — путь к локальному клону sync-репозитория
+ * @param projectId  — ID проекта (хеш первого git-коммита или "global")
+ * @param sessionId  — ID сессии
+ * @returns Абсолютный путь к файлу сессии
+ */
+export function sessionFilePath(localPath: string, projectId: string, sessionId: string): string {
+  return join(sessionsDir(localPath), projectId, `${sessionId}.json`);
+}
