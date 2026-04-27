@@ -1,87 +1,67 @@
 #!/usr/bin/env node
-/**
- * @file index.ts
- * @description CLI entry point для opencode-sync.
- *
- * Команды:
- *   opencode-sync init             — Настроить sync-репозиторий
- *   opencode-sync push             — Экспортировать сессии в git
- *   opencode-sync pull             — Импортировать сессии из git
- *   opencode-sync sync             — Pull + Push (полный цикл)
- *   opencode-sync status           — Показать текущую конфигурацию
- *
- * Флаги:
- *   --dry-run                      — Показать что будет сделано без выполнения
- *   --repo <url>                   — Переопределить URL репозитория
- *   --device <name>                — Переопределить имя устройства
- *
- * Примеры:
- *   opencode-sync init --repo git@github.com:user/sessions.git
- *   opencode-sync push
- *   opencode-sync pull --dry-run
- *   opencode-sync sync
- */
 
 import { Command } from "commander";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { loadConfig, saveConfig, CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH } from "./config.js";
+import { loadConfig, CONFIG_FILE_PATH } from "./config.js";
 import { pushSessions } from "./push.js";
 import { pullSessions } from "./pull.js";
 import { isGitRepo, maskUrl } from "./git.js";
-
-// ─── Версия из package.json ──────────────────────────────────────────────────
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
-
-// ─── CLI программа ───────────────────────────────────────────────────────────
+import { listSessions } from "./session.js";
+import { printBanner, VERSION } from "./banner.js";
+import { runSetup, SetupCancelledError } from "./setup.js";
 
 const program = new Command();
 
 program
   .name("opencode-sync")
-  .description("Git-based синхронизация сессий opencode между устройствами")
-  .version(pkg.version);
-
-// ─── Команда: init ───────────────────────────────────────────────────────────
-
-program
-  .command("init")
-  .description("Настроить sync-репозиторий (первичная инициализация)")
-  .requiredOption("--repo <url>", "URL git-репозитория (SSH или HTTPS)")
-  .option("--device <name>", "Имя устройства", process.env.HOSTNAME || "unknown")
-  .option("--path <dir>", "Локальный путь к клону", DEFAULT_LOCAL_PATH)
-  .option("--branch <name>", "Ветка в репозитории", "main")
-  .action(async (opts) => {
-    console.log("╔══════════════════════════════════════════════╗");
-    console.log("║     opencode-sync: инициализация             ║");
-    console.log("╚══════════════════════════════════════════════╝");
-    console.log();
-
-    const config = {
-      repo: opts.repo,
-      deviceName: opts.device,
-      localPath: opts.path,
-      branch: opts.branch,
-    };
-
-    // Сохраняем конфигурацию
-    saveConfig(config);
-
-    console.log(`  Репозиторий:  ${maskUrl(opts.repo)}`);
-    console.log(`  Устройство:   ${opts.device}`);
-    console.log(`  Локальный путь: ${opts.path}`);
-    console.log(`  Ветка:        ${opts.branch}`);
-    console.log();
-    console.log("Готово! Теперь используйте:");
-    console.log("  opencode-sync push   — экспортировать сессии");
-    console.log("  opencode-sync pull   — импортировать сессии");
-    console.log("  opencode-sync sync   — полный цикл (pull + push)");
+  .version(VERSION)
+  .addHelpText("before", () => {
+    printBanner();
+    return "";
   });
 
-// ─── Команда: push ───────────────────────────────────────────────────────────
+const helpText = `opencode-sync — Git-based синхронизация сессий opencode
+
+Команды:
+  setup      Первичная настройка (TUI)
+  push       Экспортировать сессии в git
+  pull       Импортировать сессии из git
+  sync       Полный цикл: pull + push
+  status     Показать текущую конфигурацию
+
+Флаги:
+  --dry-run  Показать что будет сделано, без изменений
+
+Автосинхронизация:
+  При setup в ~/.bashrc или ~/.zshrc добавляется функция,
+  которая автоматически подтягивает сессии перед запуском
+  opencode и отправляет после завершения.
+
+Переменные окружения:
+  OPENCODE_SYNC_REPO      URL git-репозитория
+  OPENCODE_SYNC_DEVICE    Имя устройства
+  OPENCODE_SYNC_PATH      Локальный путь к клону
+  OPENCODE_BIN            Путь к бинарнику opencode
+  OPENCODE_DB             Путь к SQLite базе opencode
+
+Chumikov Sec — https://t.me/chumikovsec`;
+
+program.addHelpText("after", "\n" + helpText);
+
+program
+  .command("setup")
+  .description("Первичная настройка (TUI)")
+  .action(async () => {
+    printBanner();
+    try {
+      await runSetup();
+    } catch (err: any) {
+      if (err instanceof SetupCancelledError) {
+        process.exit(0);
+      }
+      console.error(`\n[error] ${err.message}`);
+      process.exit(1);
+    }
+  });
 
 program
   .command("push")
@@ -99,8 +79,6 @@ program
     }
   });
 
-// ─── Команда: pull ───────────────────────────────────────────────────────────
-
 program
   .command("pull")
   .description("Импортировать сессии из git-репозитория")
@@ -117,30 +95,26 @@ program
     }
   });
 
-// ─── Команда: sync ───────────────────────────────────────────────────────────
-
 program
   .command("sync")
   .description("Полный цикл синхронизации: pull + push")
   .option("--dry-run", "Показать что будет сделано без реальных изменений")
   .action(async (opts) => {
-    console.log("╔══════════════════════════════════════════════╗");
-    console.log("║     opencode-sync: полная синхронизация      ║");
-    console.log("╚══════════════════════════════════════════════╝");
-    console.log();
-
     try {
-      // Шаг 1: Pull — подтягиваем сессии с других устройств
       console.log("── Шаг 1/2: Pull ──────────────────────────────");
-      const pullResult = await pullSessions({ dryRun: opts.dryRun });
+      const pullResult = await pullSessions({
+        dryRun: opts.dryRun,
+      });
 
       console.log();
 
-      // Шаг 2: Push — экспортируем локальные изменения
       console.log("── Шаг 2/2: Push ─────────────────────────────");
-      const pushResult = await pushSessions({ dryRun: opts.dryRun });
+      const sessions = listSessions();
+      const pushResult = await pushSessions({
+        dryRun: opts.dryRun,
+        sessions,
+      });
 
-      // Итоговый отчёт
       console.log();
       console.log("── Итог ──────────────────────────────────────");
       console.log(
@@ -159,8 +133,6 @@ program
     }
   });
 
-// ─── Команда: status ─────────────────────────────────────────────────────────
-
 program
   .command("status")
   .description("Показать текущую конфигурацию и статус синхронизации")
@@ -168,10 +140,6 @@ program
     try {
       const config = loadConfig();
 
-      console.log("╔══════════════════════════════════════════════╗");
-      console.log("║     opencode-sync: статус                    ║");
-      console.log("╚══════════════════════════════════════════════╝");
-      console.log();
       console.log(`  Конфиг:        ${CONFIG_FILE_PATH}`);
       console.log(`  Репозиторий:   ${maskUrl(config.repo)}`);
       console.log(`  Устройство:    ${config.deviceName}`);
@@ -181,11 +149,9 @@ program
     } catch (err: any) {
       console.error(`[error] ${err.message}`);
       console.error();
-      console.error("Запустите opencode-sync init --repo <url> для настройки");
+      console.error("Запустите opencode-sync setup для настройки");
       process.exit(1);
     }
   });
-
-// ─── Запуск ──────────────────────────────────────────────────────────────────
 
 program.parseAsync(process.argv);

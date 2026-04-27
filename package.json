@@ -1,7 +1,7 @@
 {
   "name": "opencode-sync",
   "version": "1.0.0",
-  "description": "Git-based session synchronization for opencode",
+  "description": "Git-based session synchronization for OpenCode",
   "type": "module",
   "bin": {
     "opencode-sync": "./dist/index.js"
@@ -12,15 +12,27 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
+    "@clack/prompts": "^1.2.0",
     "better-sqlite3": "^12.9.0",
-    "commander": "^13.1.0"
+    "commander": "^13.1.0",
+    "figlet": "^1.11.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/figlet": "^1.7.0",
     "@types/node": "^22.15.0",
-    "typescript": "^5.8.3"
+    "@vitest/coverage-v8": "^4.1.5",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.5"
   }
 }

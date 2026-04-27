@@ -1,113 +1,75 @@
-/**
- * @file push.ts
- * @description Экспорт локальных сессий в git-репозиторий.
- *
- * Алгоритм:
- *   1. Получить список всех локальных сессий (opencode session list)
- *   2. Для каждой сессии проверить — изменилась ли она с последнего экспорта
- *   3. Экспортировать изменившиеся сессии в JSON-файлы
- *   4. Commit + push в sync-репозиторий
- *
- * Incremental sync:
- *   Сессия экспортируется только если её time_updated больше,
- *   чем time_updated в уже существующем файле. Это избегает
- *   лишних операций и уменьшает размер git-истории.
- *
- * Безопасность:
- *   - Файлы сессий могут содержать фрагменты вашего кода
- *     (prompt, tool results). Убедитесь что sync-репозиторий
- *     PRIVATE и доступен только вам.
- *   - Маскируем URL репозитория в логах.
- */
-
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import {
   listSessions,
-  exportSession,
+  exportSessionAsync,
   saveSessionToFile,
   isLocalNewer,
   type PushResult,
+  type SessionInfo,
 } from "./session.js";
 import { ensureRepo, push as gitPush } from "./git.js";
+import { log, promisePool, EXPORT_CONCURRENCY, withLockAsync } from "./util.js";
 
-// ─── Основная функция push ───────────────────────────────────────────────────
-
-/**
- * Экспортирует локальные сессии и push'ит их в sync-репозиторий.
- *
- * @param options — опции push
- * @param options.dryRun — если true, только показать что было бы экспортировано
- * @returns Результат операции push
- */
-export async function pushSessions(options?: { dryRun?: boolean }): Promise<PushResult> {
+export async function pushSessions(options?: {
+  dryRun?: boolean;
+  sessions?: SessionInfo[];
+}): Promise<PushResult> {
   const config = loadConfig();
   const result: PushResult = { exported: 0, skipped: 0, errors: 0 };
 
-  // Убедимся что sync-репозиторий доступен
   ensureRepo(config.repo, config.localPath, config.branch);
 
-  // Получаем список всех локальных сессий
-  console.log("[push] Получение списка локальных сессий...");
-  const sessions = listSessions();
-  console.log(`[push] Найдено сессий: ${sessions.length}`);
+  const sessions = options?.sessions ?? listSessions();
+  log(`[push] Найдено сессий: ${sessions.length}`);
 
-  // Папка для сохранения сессий
-  const sessDir = sessionsDir(config.localPath);
+  const toExport: SessionInfo[] = [];
 
-  // Обрабатываем каждую сессию
   for (const session of sessions) {
     const projectId = session.projectId || "global";
     const sessionId = session.id;
+    const filePath = join(sessionsDir(config.localPath), projectId, `${sessionId}.json`);
 
-    // Определяем путь к файлу сессии
-    const filePath = join(sessDir, projectId, `${sessionId}.json`);
-
-    // Проверяем — нужно ли экспортировать (incremental)
-    if (!isLocalNewer(session, filePath)) {
-      result.skipped++;
-      continue;
-    }
-
-    // Пропускаем сессии без projectId (защита от некорректных данных)
-    if (!session.id) {
+    if (!isLocalNewer(session, filePath) || !session.id) {
       result.skipped++;
       continue;
     }
 
     if (options?.dryRun) {
-      console.log(`  [dry-run] Экспорт: ${session.title} (${sessionId})`);
+      log(`  [dry-run] Экспорт: ${session.title} (${sessionId})`);
       result.exported++;
       continue;
     }
 
-    try {
-      // Экспортируем сессию через opencode CLI
-      const data = exportSession(sessionId);
+    toExport.push(session);
+  }
 
-      // exportSession вернёт null если JSON битый (большие сессии)
-      if (!data) {
-        result.skipped++;
-        continue;
+  if (toExport.length > 0) {
+    const exportResults = await promisePool(toExport, EXPORT_CONCURRENCY, async (session) => {
+      try {
+        const data = await exportSessionAsync(session.id);
+        if (!data) return { kind: "skipped" as const };
+        saveSessionToFile(data, config.localPath);
+        log(`  ✓ ${session.title}`);
+        return { kind: "exported" as const };
+      } catch (err: any) {
+        log(`  ✗ ${session.title}: ${err.message}`);
+        return { kind: "error" as const };
       }
+    });
 
-      // Сохраняем в sync-репозиторий
-      saveSessionToFile(data, config.localPath);
-
-      result.exported++;
-      console.log(`  ✓ ${session.title}`);
-    } catch (err: any) {
-      result.errors++;
-      console.error(`  ✗ ${session.title}: ${err.message}`);
+    for (const r of exportResults) {
+      if (r.kind === "exported") result.exported++;
+      else if (r.kind === "skipped") result.skipped++;
+      else if (r.kind === "error") result.errors++;
     }
   }
 
-  // Push в remote (если не dry-run)
   if (!options?.dryRun && result.exported > 0) {
-    console.log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
-    gitPush(config.localPath, config.branch, config.deviceName);
+    log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
+    await withLockAsync(config.localPath, () => gitPush(config.localPath, config.branch, config.deviceName));
   } else if (result.exported === 0) {
-    console.log("[push] Все сессии актуальны, нет изменений для push");
+    log("[push] Все сессии актуальны, нет изменений для push");
   }
 
   return result;
