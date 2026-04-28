@@ -212,7 +212,7 @@ export async function runSetup(): Promise<void> {
       "Готово",
     );
   } else {
-    s2.stop("Shell не поддерживается (только bash/zsh)");
+    s2.stop("Shell не поддерживается (поддерживаются: bash, zsh, fish, PowerShell)");
     clack.log.warn(
       "Автосинхронизация не настроена. Используйте opencode-sync push/pull вручную",
     );
