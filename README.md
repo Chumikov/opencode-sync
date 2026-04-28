@@ -1,20 +1,20 @@
 # opencode-sync
 
-**Синхронизация сессий [opencode](https://opencode.ai) между вашими устройствами через git-репозиторий.**
+**Синхронизация сессий [OpenCode](https://opencode.ai) между вашими устройствами через приватный git-репозиторий.**
 
-Экспортирует сессии в JSON-файлы, хранит их в приватном git-репозитории. Каждое устройство push'ит свои сессии и pull'ит с других. Автосинхронизация встроена в shell — работает автоматически при каждом запуске opencode.
+Экспортирует сессии OpenCode в JSON-файлы, хранит их в вашем приватном git-репозитории. Каждое устройство push'ит свои сессии и pull'ит с других. Автосинхронизация встроена в shell — работает автоматически при каждом запуске OpenCode.
 
 > [!IMPORTANT]
-> Репозиторий **обязательно** должен быть приватным. Файлы сессий содержат промпты, фрагменты кода и результаты работы.
+> Репозиторий рекомендую **обязательно** сделать приватным. Файлы ваших сессий в OpenCode могут содержать промпты, фрагменты кода и результаты работы.
 
 ## Возможности
 
 - **Push/pull** — экспорт и импорт сессий через приватный git-репозиторий
 - **Автосинхронизация** — shell-функция `opencode()` автоматически синхронизирует перед/после работы
 - **Manifest-based удаление** — сессия удаляется когда все устройства её удалили
-- **Preflight-проверки** — перед каждой операцией проверяется интернет, доступ к GitHub, наличие opencode
+- **Preflight-проверки** — перед каждой операцией проверяется интернет, доступ к GitHub, наличие OpenCode
 - **TUI-setup** — интерактивный мастер настройки с валидацией доступа к репозиторию
-- **Нативные команды opencode** — все операции через CLI opencode (`session list`, `export`, `import`, `session delete`)
+- **Нативные команды OpenCode** — все операции производятся через CLI OpenСode (`session list`, `export`, `import`, `session delete`)
 
 ## Требования
 
@@ -27,7 +27,7 @@
 
 ## Установка
 
-Из npm (после публикации):
+Из npm:
 
 ```bash
 npm install -g opencode-sync
@@ -96,7 +96,7 @@ opencode-sync setup
 ```
 
 Интерактивный мастер:
-1. **Проверяет opencode** — если не установлен, подскажет как установить
+1. **Проверяет OpenCode** — если не установлен, подскажет как установить
 2. **Запрашивает URL репозитория** — SSH или HTTPS
 3. **Проверяет доступ** — если доступа нет, покажет конкретную ошибку и подсказку:
    - Нет интернета → проверьте подключение
@@ -106,19 +106,46 @@ opencode-sync setup
 4. Предлагает **повторить** или **изменить URL** при ошибке
 5. Запрашивает **имя устройства** — будет видно в коммитах (по умолчанию — hostname)
 6. **Клонирует** репозиторий, определяет ветку
-7. **Настраивает автосинхронизацию** — добавляет shell-функцию в `~/.bashrc` или `~/.zshrc`
+7. **Настраивает автосинхронизацию** — добавляет shell-функцию (bash, zsh, fish или PowerShell)
 
 Конфигурация сохраняется в `~/.config/opencode/sync.json`.
 
 ### Шаг 4: Перезапустить shell
 
+**Linux / macOS:**
+
 ```bash
 source ~/.zshrc   # или source ~/.bashrc
 ```
 
+**Windows (PowerShell):**
+
+```powershell
+. $PROFILE
+```
+
+**fish:**
+
+```bash
+# Функция загрузится автоматически при следующем запуске fish
+```
+
 ## Автосинхронизация
 
-При setup в ваш `~/.bashrc` или `~/.zshrc` добавляется shell-функция:
+При setup автоматически определяется ваш shell и добавляется функция-обёртка для `opencode`.
+
+### Поддерживаемые shell
+
+| Shell | Файл | ОС |
+|---|---|---|
+| bash | `~/.bashrc` или `~/.bash_profile` | Linux, macOS |
+| zsh | `~/.zshrc` | macOS (default), Linux |
+| fish | `~/.config/fish/functions/opencode.fish` | Linux, macOS |
+| PowerShell | `Documents/PowerShell/Microsoft.PowerShell_profile.ps1` | Windows, Linux, macOS |
+
+### Как это работает
+
+**bash / zsh:**
 
 ```bash
 opencode() {
@@ -130,12 +157,36 @@ opencode() {
 }
 ```
 
-Что происходит при каждом запуске `opencode`:
+**fish:**
+
+```fish
+function opencode
+    command opencode-sync pull 2>/dev/null
+    command opencode $argv
+    set -l exit_code $status
+    command opencode-sync push 2>/dev/null
+    return $exit_code
+end
+```
+
+**PowerShell:**
+
+```powershell
+function opencode {
+    opencode-sync pull 2>$null
+    opencode.exe @args
+    $exit_code = $LASTEXITCODE
+    opencode-sync push 2>$null
+    return $exit_code
+}
+```
+
+При каждом запуске `opencode`:
 1. **Pull** — подтягивает сессии с других устройств
 2. **opencode** — запускается как обычно
 3. **Push** — отправляет ваши сессии в репозиторий
 
-Ошибки синхронизации подавляются (`2>/dev/null`) — opencode запускается в любом случае.
+Ошибки синхронизации подавляются — opencode запускается в любом случае.
 
 ## Команды
 
@@ -216,5 +267,5 @@ sync-repo/
 ---
 
 <p align="center">
-  <a href="https://t.me/chumikovsec">Chumikov Sec — Telegram</a>
+  <a href="https://t.me/chumikovsec">Chumikov Sec</a>
 </p>
