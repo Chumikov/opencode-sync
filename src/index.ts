@@ -101,14 +101,17 @@ program
   .option("--dry-run", "Показать что будет сделано без реальных изменений")
   .action(async (opts) => {
     try {
-      console.log("── Шаг 1/2: Pull ──────────────────────────────");
+      console.log("── Sync ─────────────────────────────────────");
+      console.log();
+
+      console.log("[pull]");
       const pullResult = await pullSessions({
         dryRun: opts.dryRun,
       });
 
       console.log();
 
-      console.log("── Шаг 2/2: Push ─────────────────────────────");
+      console.log("[push]");
       const sessions = listSessions();
       const pushResult = await pushSessions({
         dryRun: opts.dryRun,
@@ -116,16 +119,23 @@ program
       });
 
       console.log();
-      console.log("── Итог ──────────────────────────────────────");
+      console.log("── Итог ─────────────────────────────────────");
+
+      const pullParts = [];
+      if (pullResult.imported > 0) pullParts.push(`${pullResult.imported} импорт`);
+      if (pullResult.updated > 0) pullParts.push(`${pullResult.updated} обновлено`);
+      if (pullResult.deleted > 0) pullParts.push(`${pullResult.deleted} удалено`);
+      if (pullResult.errors > 0) pullParts.push(`${pullResult.errors} ошибок`);
+
+      const pushParts = [];
+      if (pushResult.exported > 0) pushParts.push(`${pushResult.exported} экспорт`);
+      if (pushResult.errors > 0) pushParts.push(`${pushResult.errors} ошибок`);
+
       console.log(
-        `  Импортировано: ${pullResult.imported} | ` +
-          `Обновлено: ${pullResult.updated} | ` +
-          `Ошибок: ${pullResult.errors}`,
+        `  [pull] ${pullParts.length > 0 ? pullParts.join(", ") : "нет изменений"}`,
       );
       console.log(
-        `  Экспортировано: ${pushResult.exported} | ` +
-          `Пропущено: ${pushResult.skipped} | ` +
-          `Ошибок: ${pushResult.errors}`,
+        `  [push] ${pushParts.length > 0 ? pushParts.join(", ") : "нет изменений"}`,
       );
     } catch (err: any) {
       console.error(`\n[error] ${err.message}`);

@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
+import { homedir } from "node:os";
 import { loadConfig, sessionsDir } from "./config.js";
 import {
   getSessionMap,
@@ -11,6 +12,8 @@ import {
 } from "./session.js";
 import { pull as gitPull, ensureRepo } from "./git.js";
 import { log, withLock } from "./util.js";
+import { getGlobalSessionSet } from "./manifest.js";
+import Database from "better-sqlite3";
 
 function findJsonFiles(dir: string): string[] {
   const results: string[] = [];
@@ -37,16 +40,39 @@ function findJsonFiles(dir: string): string[] {
   return results;
 }
 
+function deleteSessionFromDb(sessionId: string): boolean {
+  try {
+    const dbPath = process.env.OPENCODE_DB || join(
+      process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
+      "opencode",
+      "opencode.db",
+    );
+
+    if (!statSync(dbPath, { throwIfNoEntry: false })) return false;
+
+    const db = new Database(dbPath);
+    try {
+      db.prepare("DELETE FROM session WHERE id = ?").run(sessionId);
+      return true;
+    } finally {
+      db.close();
+    }
+  } catch (err: any) {
+    log(`[pull] Не удалось удалить сессию ${sessionId}: ${err.message}`);
+    return false;
+  }
+}
+
 export async function pullSessions(options?: {
   dryRun?: boolean;
   localMap?: Map<string, SessionInfo>;
 }): Promise<PullResult> {
   const config = loadConfig();
-  const result: PullResult = { imported: 0, updated: 0, skipped: 0, errors: 0 };
+  const result: PullResult = { imported: 0, updated: 0, skipped: 0, errors: 0, deleted: 0 };
 
   ensureRepo(config.repo, config.localPath, config.branch);
 
-  log("[pull] Подтягивание изменений из remote...");
+  console.log("Pull: загрузка изменений из remote...");
   try {
     gitPull(config.localPath, config.branch);
   } catch (err: any) {
@@ -61,10 +87,14 @@ export async function pullSessions(options?: {
   const files = findJsonFiles(sessDir);
   log(`[pull] Файлов в репозитории: ${files.length}`);
 
+  let done = 0;
+  const total = files.length;
+
   for (const filePath of files) {
     const fileData = readSessionFromFile(filePath);
     if (!fileData) {
       result.errors++;
+      done++;
       continue;
     }
 
@@ -74,6 +104,7 @@ export async function pullSessions(options?: {
 
     if (!isRemoteNewer(fileData, localMap)) {
       result.skipped++;
+      done++;
       continue;
     }
 
@@ -82,6 +113,7 @@ export async function pullSessions(options?: {
       log(`  [dry-run] ${action}: ${sessionTitle} (${sessionId})`);
       if (isLocal) result.updated++;
       else result.imported++;
+      done++;
       continue;
     }
 
@@ -95,18 +127,45 @@ export async function pullSessions(options?: {
           result.imported++;
           log(`  + ${sessionTitle} (новая)`);
         }
+        done++;
+        process.stdout.write(`\r  Импорт: ${done}/${total}`);
       } else {
         result.errors++;
+        done++;
       }
     });
   }
 
-  log(
-    `\n[pull] Итого: импортировано ${result.imported}, ` +
-      `обновлено ${result.updated}, ` +
-      `пропущено ${result.skipped}, ` +
-      `ошибок ${result.errors}`,
-  );
+  if (done > 0 && !options?.dryRun) process.stdout.write("\n");
+
+  if (!options?.dryRun) {
+    const globalAlive = getGlobalSessionSet(config.localPath);
+    const localIds = [...localMap.keys()];
+
+    for (const localId of localIds) {
+      if (!globalAlive.has(localId)) {
+        const sessionInfo = localMap.get(localId)!;
+        log(`  🗑 ${sessionInfo.title || localId} (удалено на другом устройстве)`);
+        if (deleteSessionFromDb(localId)) {
+          result.deleted++;
+        } else {
+          result.errors++;
+        }
+      }
+    }
+
+    if (result.deleted > 0) {
+      console.log(`  Удалено локальных сессий: ${result.deleted}`);
+    }
+  }
+
+  const parts = [];
+  if (result.imported > 0) parts.push(`${result.imported} импортировано`);
+  if (result.updated > 0) parts.push(`${result.updated} обновлено`);
+  if (result.deleted > 0) parts.push(`${result.deleted} удалено`);
+  if (result.skipped > 0) parts.push(`${result.skipped} пропущено`);
+
+  console.log(`Готово: ${parts.length > 0 ? parts.join(", ") : "нет изменений"}`);
 
   return result;
 }

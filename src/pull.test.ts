@@ -34,6 +34,17 @@ vi.mock("./util.js", () => ({
   withLock: vi.fn((_, fn) => fn()),
 }));
 
+vi.mock("./manifest.js", () => ({
+  getGlobalSessionSet: vi.fn(() => new Set()),
+}));
+
+vi.mock("better-sqlite3", () => ({
+  default: vi.fn(() => ({
+    prepare: vi.fn(() => ({ run: vi.fn() })),
+    close: vi.fn(),
+  })),
+}));
+
 import { readdirSync, statSync } from "node:fs";
 import { loadConfig, sessionsDir } from "./config.js";
 import { getSessionMap, readSessionFromFile, importSession, isRemoteNewer } from "./session.js";
@@ -286,14 +297,17 @@ describe("pull.ts", () => {
     expect(result.imported).toBe(2);
   });
 
-  it("логирует итоговый отчёт", async () => {
+  it("выводит итог в stdout", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     mockFsStructure({});
 
     await pullSessions();
 
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("[pull] Итого:"),
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Готово"),
     );
+
+    logSpy.mockRestore();
   });
 
   it("пропускает не-JSON файлы в директории", async () => {

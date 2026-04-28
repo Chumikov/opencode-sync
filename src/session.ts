@@ -70,6 +70,7 @@ export interface PullResult {
   updated: number;
   skipped: number;
   errors: number;
+  deleted: number;
 }
 
 const OPENCODE_BIN = process.env.OPENCODE_BIN || "opencode";

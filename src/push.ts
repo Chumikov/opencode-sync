@@ -1,3 +1,4 @@
+import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import {
@@ -10,6 +11,7 @@ import {
 } from "./session.js";
 import { ensureRepo, push as gitPush } from "./git.js";
 import { log, promisePool, EXPORT_CONCURRENCY, withLockAsync } from "./util.js";
+import { writeManifest, getGlobalSessionSet, findOrphanFiles } from "./manifest.js";
 
 export async function pushSessions(options?: {
   dryRun?: boolean;
@@ -21,7 +23,13 @@ export async function pushSessions(options?: {
   ensureRepo(config.repo, config.localPath, config.branch);
 
   const sessions = options?.sessions ?? listSessions();
-  log(`[push] Найдено сессий: ${sessions.length}`);
+  const newCount = sessions.filter((s) => {
+    if (!s.id) return false;
+    const filePath = join(sessionsDir(config.localPath), s.projectId || "global", `${s.id}.json`);
+    return isLocalNewer(s, filePath);
+  }).length;
+
+  console.log(`Push: ${sessions.length} сессий, ${newCount} новых/изменённых`);
 
   const toExport: SessionInfo[] = [];
 
@@ -45,18 +53,26 @@ export async function pushSessions(options?: {
   }
 
   if (toExport.length > 0) {
+    let done = 0;
+    const total = toExport.length;
+
     const exportResults = await promisePool(toExport, EXPORT_CONCURRENCY, async (session) => {
       try {
         const data = await exportSessionAsync(session.id);
         if (!data) return { kind: "skipped" as const };
         saveSessionToFile(data, config.localPath);
-        log(`  ✓ ${session.title}`);
+        done++;
+        process.stdout.write(`\r  Экспорт: ${done}/${total}`);
         return { kind: "exported" as const };
       } catch (err: any) {
+        done++;
+        process.stdout.write(`\r  Экспорт: ${done}/${total}`);
         log(`  ✗ ${session.title}: ${err.message}`);
         return { kind: "error" as const };
       }
     });
+
+    if (done > 0) process.stdout.write("\n");
 
     for (const r of exportResults) {
       if (r.kind === "exported") result.exported++;
@@ -65,11 +81,34 @@ export async function pushSessions(options?: {
     }
   }
 
-  if (!options?.dryRun && result.exported > 0) {
-    log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
-    await withLockAsync(config.localPath, () => gitPush(config.localPath, config.branch, config.deviceName));
-  } else if (result.exported === 0) {
-    log("[push] Все сессии актуальны, нет изменений для push");
+  if (!options?.dryRun) {
+    const localIds = new Set(sessions.filter((s) => s.id).map((s) => s.id));
+    writeManifest(config.localPath, config.deviceName, localIds);
+
+    const globalAlive = getGlobalSessionSet(config.localPath);
+    const sessDir = sessionsDir(config.localPath);
+    const orphans = findOrphanFiles(sessDir, globalAlive);
+
+    if (orphans.length > 0) {
+      for (const file of orphans) {
+        try {
+          unlinkSync(file);
+          log(`  🗑 ${join("", file.split("/").slice(-2).join("/"))}`);
+        } catch (err: any) {
+          log(`  ✗ Не удалось удалить ${file}: ${err.message}`);
+        }
+      }
+      console.log(`  Удалено orphan-файлов: ${orphans.length}`);
+    }
+
+    if (result.exported > 0 || orphans.length > 0) {
+      log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
+      await withLockAsync(config.localPath, () => gitPush(config.localPath, config.branch, config.deviceName));
+      console.log(`Готово: ${result.exported} экспортировано, ${result.skipped} пропущено${orphans.length > 0 ? `, ${orphans.length} удалено` : ""}`);
+    } else {
+      log("[push] Все сессии актуальны, нет изменений для push");
+      console.log("Push: нет изменений");
+    }
   }
 
   return result;

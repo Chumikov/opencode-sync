@@ -30,6 +30,12 @@ vi.mock("./util.js", () => ({
   withLockAsync: vi.fn(async (_, fn) => fn()),
 }));
 
+vi.mock("./manifest.js", () => ({
+  writeManifest: vi.fn(),
+  getGlobalSessionSet: vi.fn(() => new Set()),
+  findOrphanFiles: vi.fn(() => []),
+}));
+
 import { loadConfig, sessionsDir } from "./config.js";
 import { listSessions, exportSessionAsync, saveSessionToFile, isLocalNewer } from "./session.js";
 import { ensureRepo, push as gitPush } from "./git.js";
@@ -167,27 +173,33 @@ describe("push.ts", () => {
     expect(mockExportAsync).not.toHaveBeenCalled();
   });
 
-  it("логирует количество найденных сессий", async () => {
+  it("выводит количество найденных сессий в stdout", async () => {
     mockListSessions.mockReturnValue([mockSessionInfo(), mockSessionInfo()]);
     mockIsLocalNewer.mockReturnValue(false);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await pushSessions();
 
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("Найдено сессий: 2"),
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("2 сессий"),
     );
+
+    logSpy.mockRestore();
   });
 
   it("принимает pre-loaded sessions", async () => {
     const sessions = [mockSessionInfo({ id: "s1" })];
     mockIsLocalNewer.mockReturnValue(false);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await pushSessions({ sessions });
 
     expect(mockListSessions).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("Найдено сессий: 1"),
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining("1 сессий"),
     );
+
+    logSpy.mockRestore();
   });
 
   it("использует promisePool для параллельного экспорта", async () => {
