@@ -1,6 +1,6 @@
 {
   "name": "opencode-sync",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Git-based session synchronization for OpenCode",
   "type": "module",
   "bin": {
@@ -22,7 +22,7 @@
     "prepare": "husky"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
