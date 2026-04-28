@@ -10,6 +10,8 @@ import {
   isLocalNewer,
   isRemoteNewer,
   getProjectId,
+  deleteSession,
+  checkOpenCodeInstalled,
 } from "./session.js";
 import { mockSessionInfo, mockSessionExport } from "./__tests__/helpers.js";
 
@@ -25,15 +27,6 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
-vi.mock("better-sqlite3", () => ({
-  default: vi.fn(function (this: any) {
-    this.prepare = vi.fn(() => ({
-      all: vi.fn().mockReturnValue([]),
-    }));
-    this.close = vi.fn();
-  }),
-}));
-
 vi.mock("./util.js", () => ({
   OPENCODE_TIMEOUT_MS: 30_000,
   OPENCODE_MAX_BUFFER: 50 * 1024 * 1024,
@@ -44,20 +37,23 @@ vi.mock("./util.js", () => ({
 
 import { execFileSync, execFile } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import Database from "better-sqlite3";
 
-const mockExecFile = vi.mocked(execFileSync);
-const mockExecFileAsync = vi.mocked(execFile);
+const mockExecFileSync = vi.mocked(execFileSync);
+const mockExecFile = vi.mocked(execFile);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
 
+function mockSessionListJSON(sessions: ReturnType<typeof mockSessionInfo>[]) {
+  mockExecFileSync.mockReturnValue(JSON.stringify(sessions));
+}
+
 describe("session.ts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.OPENCODE_DB;
-    delete process.env.XDG_DATA_HOME;
+    delete process.env.OPENCODE_BIN;
   });
 
   describe("getProjectId", () => {
@@ -90,78 +86,42 @@ describe("session.ts", () => {
   });
 
   describe("listSessions", () => {
-    it("возвращает массив сессий из БД", () => {
+    it("вызывает opencode session list --format json", () => {
       const sessions = [
         mockSessionInfo({ id: "s1", title: "Session 1" }),
         mockSessionInfo({ id: "s2", title: "Session 2" }),
       ];
-
-      mockExistsSync.mockReturnValue(true);
-      const originalDB = Database;
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue(sessions) }));
-        this.close = vi.fn();
-      } as any);
+      mockSessionListJSON(sessions);
 
       const result = listSessions();
 
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "opencode",
+        ["session", "list", "--format", "json"],
+        expect.any(Object),
+      );
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe("s1");
     });
 
-    it("возвращает пустой массив если БД не найдена", () => {
-      mockExistsSync.mockReturnValue(false);
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    it("возвращает пустой массив при ошибке команды", () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("command not found");
+      });
 
       const result = listSessions();
 
       expect(result).toEqual([]);
-
-      warnSpy.mockRestore();
     });
 
-    it("открывает БД в readonly режиме", () => {
-      mockExistsSync.mockReturnValue(true);
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue([]) }));
-        this.close = vi.fn();
-      } as any);
+    it("возвращает пустой массив при битом JSON", () => {
+      mockExecFileSync.mockReturnValue("NOT JSON {{{");
 
-      listSessions();
+      const result = listSessions();
 
-      expect(Database).toHaveBeenCalledWith(expect.any(String), {
-        readonly: true,
-      });
+      expect(result).toEqual([]);
     });
 
-    it("закрывает БД после чтения", () => {
-      mockExistsSync.mockReturnValue(true);
-      const closeFn = vi.fn();
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue([]) }));
-        this.close = closeFn;
-      } as any);
-
-      listSessions();
-
-      expect(closeFn).toHaveBeenCalled();
-    });
-
-    it("закрывает БД даже при ошибке запроса", () => {
-      mockExistsSync.mockReturnValue(true);
-      const closeFn = vi.fn();
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({
-          all: vi.fn().mockImplementation(() => {
-            throw new Error("SQL error");
-          }),
-        }));
-        this.close = closeFn;
-      } as any);
-
-      expect(() => listSessions()).toThrow();
-      expect(closeFn).toHaveBeenCalled();
-    });
   });
 
   describe("getSessionMap", () => {
@@ -170,12 +130,7 @@ describe("session.ts", () => {
         mockSessionInfo({ id: "s1" }),
         mockSessionInfo({ id: "s2" }),
       ];
-
-      mockExistsSync.mockReturnValue(true);
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue(sessions) }));
-        this.close = vi.fn();
-      } as any);
+      mockSessionListJSON(sessions);
 
       const map = getSessionMap();
 
@@ -185,7 +140,9 @@ describe("session.ts", () => {
     });
 
     it("возвращает пустой Map если сессий нет", () => {
-      mockExistsSync.mockReturnValue(false);
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("no opencode");
+      });
 
       const map = getSessionMap();
 
@@ -196,13 +153,13 @@ describe("session.ts", () => {
   describe("exportSession", () => {
     it("экспортирует сессию через opencode CLI", () => {
       const exported = mockSessionExport();
-      mockExecFile.mockReturnValue(JSON.stringify(exported));
+      mockExecFileSync.mockReturnValue(JSON.stringify(exported));
 
       const result = exportSession("s1");
 
       expect(result).not.toBeNull();
       expect(result!.info.id).toBe("01JTEST00000000000000000001");
-      expect(mockExecFile).toHaveBeenCalledWith(
+      expect(mockExecFileSync).toHaveBeenCalledWith(
         expect.any(String),
         ["export", "s1"],
         expect.any(Object),
@@ -210,18 +167,15 @@ describe("session.ts", () => {
     });
 
     it("возвращает null при битом JSON", () => {
-      mockExecFile.mockReturnValue("NOT JSON {{{");
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockExecFileSync.mockReturnValue("NOT JSON {{{");
 
       const result = exportSession("s1");
 
       expect(result).toBeNull();
-
-      warnSpy.mockRestore();
     });
 
     it("пробрасывает не-JSON ошибки", () => {
-      mockExecFile.mockImplementation(() => {
+      mockExecFileSync.mockImplementation(() => {
         throw Object.assign(new Error("opencode export: command failed"), {
           stderr: "command not found",
         });
@@ -234,7 +188,7 @@ describe("session.ts", () => {
   describe("exportSessionAsync", () => {
     it("экспортирует сессию через async execFile", async () => {
       const exported = mockSessionExport();
-      mockExecFileAsync.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
+      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
         cb(null, JSON.stringify(exported), "");
       }) as any);
 
@@ -245,7 +199,7 @@ describe("session.ts", () => {
     });
 
     it("возвращает null при битом JSON", async () => {
-      mockExecFileAsync.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
+      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
         cb(null, "NOT JSON {{{", "");
       }) as any);
 
@@ -255,7 +209,7 @@ describe("session.ts", () => {
     });
 
     it("пробрасывает не-JSON ошибки", async () => {
-      mockExecFileAsync.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
+      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
         cb(new Error("export failed"), "", "stderr");
       }) as any);
 
@@ -307,24 +261,21 @@ describe("session.ts", () => {
 
     it("возвращает null для повреждённого файла", () => {
       mockReadFileSync.mockReturnValue("BROKEN JSON");
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const result = readSessionFromFile("/tmp/bad.json");
 
       expect(result).toBeNull();
-
-      warnSpy.mockRestore();
     });
   });
 
   describe("importSession", () => {
     it("возвращает true при успешном импорте", () => {
-      mockExecFile.mockReturnValue("");
+      mockExecFileSync.mockReturnValue("");
 
       const result = importSession("/tmp/sync/sessions/abc/s1.json");
 
       expect(result).toBe(true);
-      expect(mockExecFile).toHaveBeenCalledWith(
+      expect(mockExecFileSync).toHaveBeenCalledWith(
         expect.any(String),
         ["import", "/tmp/sync/sessions/abc/s1.json"],
         expect.any(Object),
@@ -332,16 +283,72 @@ describe("session.ts", () => {
     });
 
     it("возвращает false при ошибке", () => {
-      mockExecFile.mockImplementation(() => {
+      mockExecFileSync.mockImplementation(() => {
         throw Object.assign(new Error("import failed"), { stderr: "error" });
       });
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const result = importSession("/tmp/bad.json");
 
       expect(result).toBe(false);
+    });
+  });
 
-      errorSpy.mockRestore();
+  describe("deleteSession", () => {
+    it("вызывает opencode session delete", () => {
+      mockExecFileSync.mockReturnValue("");
+
+      const result = deleteSession("s1");
+
+      expect(result).toBe(true);
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        expect.any(String),
+        ["session", "delete", "s1"],
+        expect.any(Object),
+      );
+    });
+
+    it("возвращает false при ошибке", () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw Object.assign(new Error("delete failed"), { stderr: "error" });
+      });
+
+      const result = deleteSession("s1");
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("checkOpenCodeInstalled", () => {
+    it("возвращает путь к бинарнику если opencode установлен", () => {
+      mockExecFileSync.mockReturnValue("1.14.25\n");
+
+      const result = checkOpenCodeInstalled();
+
+      expect(result).toBe("opencode");
+    });
+
+    it("возвращает пустую строку если opencode не установлен", () => {
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("not found");
+      });
+
+      const result = checkOpenCodeInstalled();
+
+      expect(result).toBe("");
+    });
+
+    it("использует OPENCODE_BIN из env", () => {
+      process.env.OPENCODE_BIN = "/custom/opencode";
+      mockExecFileSync.mockReturnValue("1.0.0\n");
+
+      const result = checkOpenCodeInstalled();
+
+      expect(result).toBe("/custom/opencode");
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        "/custom/opencode",
+        ["--version"],
+        expect.any(Object),
+      );
     });
   });
 
@@ -389,7 +396,6 @@ describe("session.ts", () => {
     it("возвращает true если файл повреждён", () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue("BAD JSON");
-      vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const result = isLocalNewer(mockSessionInfo(), "/tmp/broken.json");
 
@@ -446,56 +452,6 @@ describe("session.ts", () => {
       });
 
       expect(isRemoteNewer(fileData, localMap)).toBe(false);
-    });
-  });
-
-  describe("getOpenCodeDbPath", () => {
-    it("использует OPENCODE_DB env переменную", () => {
-      mockExistsSync.mockReturnValue(true);
-      process.env.OPENCODE_DB = "/custom/path/opencode.db";
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue([]) }));
-        this.close = vi.fn();
-      } as any);
-
-      listSessions();
-
-      expect(Database).toHaveBeenCalledWith(
-        "/custom/path/opencode.db",
-        expect.any(Object),
-      );
-    });
-
-    it("передаёт OPENCODE_DB напрямую в Database", () => {
-      mockExistsSync.mockReturnValue(true);
-      process.env.OPENCODE_DB = "/custom/path/opencode.db";
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue([]) }));
-        this.close = vi.fn();
-      } as any);
-
-      listSessions();
-
-      expect(Database).toHaveBeenCalledWith(
-        "/custom/path/opencode.db",
-        expect.any(Object),
-      );
-    });
-
-    it("OPENCODE_DB=:memory: передаётся как есть", () => {
-      mockExistsSync.mockReturnValue(true);
-      process.env.OPENCODE_DB = ":memory:";
-      vi.mocked(Database).mockImplementationOnce(function (this: any) {
-        this.prepare = vi.fn(() => ({ all: vi.fn().mockReturnValue([]) }));
-        this.close = vi.fn();
-      } as any);
-
-      listSessions();
-
-      expect(Database).toHaveBeenCalledWith(
-        ":memory:",
-        expect.any(Object),
-      );
     });
   });
 

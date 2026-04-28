@@ -23,12 +23,10 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
-    "better-sqlite3": "^12.9.0",
     "commander": "^13.1.0",
     "figlet": "^1.11.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/figlet": "^1.7.0",
     "@types/node": "^22.15.0",
     "@vitest/coverage-v8": "^4.1.5",

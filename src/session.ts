@@ -1,35 +1,12 @@
 import { execFileSync, execFile } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
-import Database from "better-sqlite3";
 import {
   OPENCODE_TIMEOUT_MS,
   OPENCODE_MAX_BUFFER,
   validateSessionId,
   log,
 } from "./util.js";
-
-function getOpenCodeDbPath(): string {
-  if (process.env.OPENCODE_DB) {
-    return process.env.OPENCODE_DB;
-  }
-  try {
-    const result = execFileSync(OPENCODE_BIN, ["db", "path"], {
-      encoding: "utf-8",
-      timeout: OPENCODE_TIMEOUT_MS,
-      maxBuffer: OPENCODE_MAX_BUFFER,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const path = result.trim();
-    if (path) return path;
-  } catch {}
-  return join(
-    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
-    "opencode",
-    "opencode.db",
-  );
-}
 
 export interface SessionInfo {
   id: string;
@@ -119,34 +96,13 @@ async function runOpenCodeAsync(args: string[]): Promise<string> {
 }
 
 export function listSessions(): SessionInfo[] {
-  const dbPath = getOpenCodeDbPath();
-
-  if (!existsSync(dbPath)) {
-    log(`[session] БД opencode не найдена: ${dbPath}`);
-    return [];
-  }
-
-  const db = new Database(dbPath, { readonly: true });
-
   try {
-    const rows = db
-      .prepare(
-        `SELECT
-           id,
-           title,
-           project_id   AS projectId,
-           directory,
-           time_created AS created,
-           time_updated AS updated
-         FROM session
-         WHERE time_archived IS NULL
-         ORDER BY time_updated DESC`,
-      )
-      .all() as SessionInfo[];
-
-    return rows;
-  } finally {
-    db.close();
+    const stdout = runOpenCode(["session", "list", "--format", "json"]);
+    const sessions = JSON.parse(stdout) as SessionInfo[];
+    return sessions;
+  } catch (err: any) {
+    log(`[session] Не удалось получить список сессий: ${err.message}`);
+    return [];
   }
 }
 
