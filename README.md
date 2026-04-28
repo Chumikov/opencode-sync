@@ -20,7 +20,7 @@
 
 | Зависимость | Минимальная версия |
 |---|---|
-| Node.js | >= 18 |
+| Node.js | >= 20 |
 | git | любой |
 | opencode | >= 1.14 |
 | SSH-ключ или PAT | для доступа к GitHub |
@@ -30,7 +30,7 @@
 Из npm:
 
 ```bash
-npm install -g opencode-sync
+npm install -g @chumikov/opencode-sync
 ```
 
 Из исходников:
