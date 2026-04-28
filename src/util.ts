@@ -1,4 +1,4 @@
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const OPENCODE_TIMEOUT_MS = 30_000;
@@ -18,22 +18,22 @@ export function validateSessionId(id: string): void {
 }
 
 export function log(msg: string): void {
-  process.stderr.write(msg + "\n");
+  process.stderr.write(`${msg}\n`);
 }
 
-export async function promisePool<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
+export async function promisePool<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = [];
   const errors: any[] = [];
   const executing = new Set<Promise<void>>();
 
   for (const item of items) {
     const p = fn(item).then(
-      (r) => { results.push(r); },
-      (err) => { errors.push(err); },
+      (r) => {
+        results.push(r);
+      },
+      (err) => {
+        errors.push(err);
+      },
     );
     executing.add(p as Promise<void>);
     p.finally(() => executing.delete(p as Promise<void>));
@@ -65,9 +65,7 @@ export function acquireLock(lockDir: string): void {
     const content = readFileSync(lockPath, "utf-8").trim();
     const pid = parseInt(content, 10);
     if (!Number.isNaN(pid) && isProcessRunning(pid)) {
-      throw new Error(
-        `opencode-sync уже запущен (PID ${pid}). Если это ошибка, удалите ${lockPath}`,
-      );
+      throw new Error(`opencode-sync уже запущен (PID ${pid}). Если это ошибка, удалите ${lockPath}`);
     }
     try {
       unlinkSync(lockPath);

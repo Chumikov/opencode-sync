@@ -1,27 +1,22 @@
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
+import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
+import { findOrphanFiles, getGlobalSessionSet, writeManifest } from "./manifest.js";
 import {
-  listSessions,
-  exportSessionAsync,
-  saveSessionToFile,
-  isLocalNewer,
   checkOpenCodeInstalled,
+  exportSessionAsync,
+  isLocalNewer,
+  listSessions,
   type PushResult,
   type SessionInfo,
+  saveSessionToFile,
 } from "./session.js";
-import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
-import { log, promisePool, EXPORT_CONCURRENCY, withLockAsync } from "./util.js";
-import { writeManifest, getGlobalSessionSet, findOrphanFiles } from "./manifest.js";
+import { EXPORT_CONCURRENCY, log, promisePool, withLockAsync } from "./util.js";
 
-export async function pushSessions(options?: {
-  dryRun?: boolean;
-  sessions?: SessionInfo[];
-}): Promise<PushResult> {
+export async function pushSessions(options?: { dryRun?: boolean; sessions?: SessionInfo[] }): Promise<PushResult> {
   if (!checkOpenCodeInstalled()) {
-    throw new Error(
-      "opencode не найден. Установите opencode: https://opencode.ai",
-    );
+    throw new Error("opencode не найден. Установите opencode: https://opencode.ai");
   }
 
   const config = loadConfig();
@@ -112,7 +107,9 @@ export async function pushSessions(options?: {
     if (result.exported > 0 || orphans.length > 0) {
       log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
       await withLockAsync(config.localPath, () => gitPush(config.localPath, config.branch, config.deviceName));
-      console.log(`Готово: ${result.exported} экспортировано, ${result.skipped} пропущено${orphans.length > 0 ? `, ${orphans.length} удалено` : ""}`);
+      console.log(
+        `Готово: ${result.exported} экспортировано, ${result.skipped} пропущено${orphans.length > 0 ? `, ${orphans.length} удалено` : ""}`,
+      );
     } else {
       log("[push] Все сессии актуальны, нет изменений для push");
       console.log("Push: нет изменений");

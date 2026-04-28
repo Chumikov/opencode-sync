@@ -1,12 +1,7 @@
-import { execFileSync, execFile } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import {
-  OPENCODE_TIMEOUT_MS,
-  OPENCODE_MAX_BUFFER,
-  validateSessionId,
-  log,
-} from "./util.js";
+import { execFile, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { log, OPENCODE_MAX_BUFFER, OPENCODE_TIMEOUT_MS, validateSessionId } from "./util.js";
 
 export interface SessionInfo {
   id: string;
@@ -80,18 +75,23 @@ function runOpenCode(args: string[]): string {
 
 async function runOpenCodeAsync(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(OPENCODE_BIN, args, {
-      encoding: "utf-8",
-      timeout: OPENCODE_TIMEOUT_MS,
-      maxBuffer: OPENCODE_MAX_BUFFER,
-    }, (err, stdout, stderr) => {
-      if (err) {
-        const msg = stderr?.trim() || err.message;
-        reject(new Error(`opencode ${args.join(" ")}: ${msg}`));
-      } else {
-        resolve(stdout);
-      }
-    });
+    execFile(
+      OPENCODE_BIN,
+      args,
+      {
+        encoding: "utf-8",
+        timeout: OPENCODE_TIMEOUT_MS,
+        maxBuffer: OPENCODE_MAX_BUFFER,
+      },
+      (err, stdout, stderr) => {
+        if (err) {
+          const msg = stderr?.trim() || err.message;
+          reject(new Error(`opencode ${args.join(" ")}: ${msg}`));
+        } else {
+          resolve(stdout);
+        }
+      },
+    );
   });
 }
 
@@ -149,7 +149,7 @@ export function saveSessionToFile(data: SessionExport, basePath: string): string
   const filePath = join(basePath, "sessions", projectId, `${sessionId}.json`);
 
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 
   return filePath;
 }
@@ -183,10 +183,7 @@ export function isLocalNewer(local: SessionInfo, filePath: string): boolean {
   return local.updated > getUpdated(fileData);
 }
 
-export function isRemoteNewer(
-  fileData: SessionExport,
-  localMap: Map<string, SessionInfo>,
-): boolean {
+export function isRemoteNewer(fileData: SessionExport, localMap: Map<string, SessionInfo>): boolean {
   const sessionId = fileData.info.id;
   const localSession = localMap.get(sessionId);
 

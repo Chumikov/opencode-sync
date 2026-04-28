@@ -1,19 +1,19 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import {
-  listSessions,
-  getSessionMap,
+  checkOpenCodeInstalled,
+  deleteSession,
   exportSession,
   exportSessionAsync,
-  saveSessionToFile,
-  readSessionFromFile,
+  getProjectId,
+  getSessionMap,
   importSession,
   isLocalNewer,
   isRemoteNewer,
-  getProjectId,
-  deleteSession,
-  checkOpenCodeInstalled,
+  listSessions,
+  readSessionFromFile,
+  saveSessionToFile,
 } from "./session.js";
-import { mockSessionInfo, mockSessionExport } from "./__tests__/helpers.js";
 
 vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
@@ -35,8 +35,8 @@ vi.mock("./util.js", () => ({
   EXPORT_CONCURRENCY: 5,
 }));
 
-import { execFileSync, execFile } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const mockExecFileSync = vi.mocked(execFileSync);
 const mockExecFile = vi.mocked(execFile);
@@ -121,15 +121,11 @@ describe("session.ts", () => {
 
       expect(result).toEqual([]);
     });
-
   });
 
   describe("getSessionMap", () => {
     it("возвращает Map с правильными ключами", () => {
-      const sessions = [
-        mockSessionInfo({ id: "s1" }),
-        mockSessionInfo({ id: "s2" }),
-      ];
+      const sessions = [mockSessionInfo({ id: "s1" }), mockSessionInfo({ id: "s2" })];
       mockSessionListJSON(sessions);
 
       const map = getSessionMap();
@@ -158,12 +154,8 @@ describe("session.ts", () => {
       const result = exportSession("s1");
 
       expect(result).not.toBeNull();
-      expect(result!.info.id).toBe("01JTEST00000000000000000001");
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        ["export", "s1"],
-        expect.any(Object),
-      );
+      expect(result?.info.id).toBe("01JTEST00000000000000000001");
+      expect(mockExecFileSync).toHaveBeenCalledWith(expect.any(String), ["export", "s1"], expect.any(Object));
     });
 
     it("возвращает null при битом JSON", () => {
@@ -195,7 +187,7 @@ describe("session.ts", () => {
       const result = await exportSessionAsync("s1");
 
       expect(result).not.toBeNull();
-      expect(result!.info.id).toBe("01JTEST00000000000000000001");
+      expect(result?.info.id).toBe("01JTEST00000000000000000001");
     });
 
     it("возвращает null при битом JSON", async () => {
@@ -223,17 +215,11 @@ describe("session.ts", () => {
 
       const path = saveSessionToFile(data, "/tmp/sync");
 
-      expect(path).toBe(
-        "/tmp/sync/sessions/abc123/01JTEST00000000000000000001.json",
-      );
+      expect(path).toBe("/tmp/sync/sessions/abc123/01JTEST00000000000000000001.json");
       expect(mockMkdirSync).toHaveBeenCalledWith(expect.any(String), {
         recursive: true,
       });
-      expect(mockWriteFileSync).toHaveBeenCalledWith(
-        path,
-        expect.any(String),
-        "utf-8",
-      );
+      expect(mockWriteFileSync).toHaveBeenCalledWith(path, expect.any(String), "utf-8");
     });
 
     it("сохраняет форматированный JSON", () => {
@@ -256,7 +242,7 @@ describe("session.ts", () => {
       const result = readSessionFromFile("/tmp/sync/sessions/abc/s1.json");
 
       expect(result).not.toBeNull();
-      expect(result!.info.id).toBe("01JTEST00000000000000000001");
+      expect(result?.info.id).toBe("01JTEST00000000000000000001");
     });
 
     it("возвращает null для повреждённого файла", () => {
@@ -344,11 +330,7 @@ describe("session.ts", () => {
       const result = checkOpenCodeInstalled();
 
       expect(result).toBe("/custom/opencode");
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        "/custom/opencode",
-        ["--version"],
-        expect.any(Object),
-      );
+      expect(mockExecFileSync).toHaveBeenCalledWith("/custom/opencode", ["--version"], expect.any(Object));
     });
   });
 
@@ -412,9 +394,7 @@ describe("session.ts", () => {
     });
 
     it("возвращает true если remote новее", () => {
-      const localMap = new Map([
-        ["01JTEST00000000000000000001", mockSessionInfo({ updated: 1700000000000 })],
-      ]);
+      const localMap = new Map([["01JTEST00000000000000000001", mockSessionInfo({ updated: 1700000000000 })]]);
       const fileData = mockSessionExport({
         info: {
           ...mockSessionExport().info,
@@ -426,9 +406,7 @@ describe("session.ts", () => {
     });
 
     it("возвращает false если локальная новее", () => {
-      const localMap = new Map([
-        ["01JTEST00000000000000000001", mockSessionInfo({ updated: 1700000200000 })],
-      ]);
+      const localMap = new Map([["01JTEST00000000000000000001", mockSessionInfo({ updated: 1700000200000 })]]);
       const fileData = mockSessionExport({
         info: {
           ...mockSessionExport().info,
@@ -441,9 +419,7 @@ describe("session.ts", () => {
 
     it("возвращает false если timestamp одинаковый", () => {
       const ts = 1700000100000;
-      const localMap = new Map([
-        ["01JTEST00000000000000000001", mockSessionInfo({ updated: ts })],
-      ]);
+      const localMap = new Map([["01JTEST00000000000000000001", mockSessionInfo({ updated: ts })]]);
       const fileData = mockSessionExport({
         info: {
           ...mockSessionExport().info,

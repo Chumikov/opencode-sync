@@ -1,19 +1,19 @@
 import { readdirSync, statSync } from "node:fs";
-import { join, extname } from "node:path";
+import { extname, join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
+import { ensureRepo, pull as gitPull, preflightCheck } from "./git.js";
+import { getGlobalSessionSet } from "./manifest.js";
 import {
+  checkOpenCodeInstalled,
+  deleteSession,
   getSessionMap,
-  readSessionFromFile,
   importSession,
   isRemoteNewer,
-  deleteSession,
-  checkOpenCodeInstalled,
   type PullResult,
+  readSessionFromFile,
   type SessionInfo,
 } from "./session.js";
-import { pull as gitPull, ensureRepo, preflightCheck } from "./git.js";
 import { log, withLock } from "./util.js";
-import { getGlobalSessionSet } from "./manifest.js";
 
 function findJsonFiles(dir: string): string[] {
   const results: string[] = [];
@@ -45,9 +45,7 @@ export async function pullSessions(options?: {
   localMap?: Map<string, SessionInfo>;
 }): Promise<PullResult> {
   if (!checkOpenCodeInstalled()) {
-    throw new Error(
-      "opencode не найден. Установите opencode: https://opencode.ai",
-    );
+    throw new Error("opencode не найден. Установите opencode: https://opencode.ai");
   }
 
   const config = loadConfig();

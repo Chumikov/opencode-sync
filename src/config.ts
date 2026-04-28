@@ -11,9 +11,9 @@
  *   - Storage: $XDG_DATA_HOME/opencode-sync/
  */
 
-import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
+import { join, resolve } from "node:path";
 
 // ─── XDG-пути по умолчанию ──────────────────────────────────────────────────
 
@@ -83,20 +83,13 @@ export function loadConfig(): SyncConfig {
   const repo = process.env.OPENCODE_SYNC_REPO || fileConfig.repo;
   if (!repo) {
     throw new Error(
-      "Не указан git-репозиторий.\n" +
-        "  Установите OPENCODE_SYNC_REPO или добавьте \"repo\" в " +
-        CONFIG_FILE_PATH,
+      `Не указан git-репозиторий.\n  Установите OPENCODE_SYNC_REPO или добавьте "repo" в ${CONFIG_FILE_PATH}`,
     );
   }
 
-  const deviceName =
-    process.env.OPENCODE_SYNC_DEVICE ||
-    fileConfig.deviceName ||
-    hostname();
+  const deviceName = process.env.OPENCODE_SYNC_DEVICE || fileConfig.deviceName || hostname();
 
-  const localPath = resolve(
-    process.env.OPENCODE_SYNC_PATH || fileConfig.localPath || DEFAULT_LOCAL_PATH,
-  );
+  const localPath = resolve(process.env.OPENCODE_SYNC_PATH || fileConfig.localPath || DEFAULT_LOCAL_PATH);
 
   const branch = fileConfig.branch || "main";
 
@@ -115,7 +108,7 @@ export function saveConfig(config: SyncConfig): void {
     mkdirSync(dir, { recursive: true });
   }
 
-  writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2) + "\n", "utf-8");
+  writeFileSync(CONFIG_FILE_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
   chmodSync(CONFIG_FILE_PATH, 0o600);
   console.log(`[sync] Конфигурация сохранена в ${CONFIG_FILE_PATH}`);
 }

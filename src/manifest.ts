@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join, extname } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 
 const MANIFESTS_DIR = "manifests";
 
@@ -24,7 +24,7 @@ export function writeManifest(localPath: string, deviceName: string, sessionIds:
     mkdirSync(dir, { recursive: true });
   }
   const filePath = join(dir, `${deviceName}.json`);
-  writeFileSync(filePath, JSON.stringify({ sessionIds: [...sessionIds] }, null, 2) + "\n", "utf-8");
+  writeFileSync(filePath, `${JSON.stringify({ sessionIds: [...sessionIds] }, null, 2)}\n`, "utf-8");
 }
 
 export function getGlobalSessionSet(localPath: string): Set<string> {

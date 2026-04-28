@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { loadConfig, CONFIG_FILE_PATH } from "./config.js";
-import { pushSessions } from "./push.js";
-import { pullSessions } from "./pull.js";
-import { isGitRepo, maskUrl, checkRepoAccess, PreflightError } from "./git.js";
-import { listSessions } from "./session.js";
 import { printBanner, VERSION } from "./banner.js";
+import { CONFIG_FILE_PATH, loadConfig } from "./config.js";
+import { checkRepoAccess, isGitRepo, maskUrl, PreflightError } from "./git.js";
+import { pullSessions } from "./pull.js";
+import { pushSessions } from "./push.js";
+import { listSessions } from "./session.js";
 import { runSetup, SetupCancelledError } from "./setup.js";
 
 const program = new Command();
@@ -41,11 +41,10 @@ const helpText = `opencode-sync — Git-based синхронизация сес�
   OPENCODE_SYNC_DEVICE    Имя устройства
   OPENCODE_SYNC_PATH      Локальный путь к клону
   OPENCODE_BIN            Путь к бинарнику opencode
-  OPENCODE_DB             Путь к SQLite базе opencode
 
 Chumikov Sec — https://t.me/chumikovsec`;
 
-program.addHelpText("after", "\n" + helpText);
+program.addHelpText("after", `\n${helpText}`);
 
 program
   .command("setup")
@@ -56,10 +55,10 @@ program
       await runSetup();
     } catch (err: any) {
       if (err instanceof SetupCancelledError) {
-        process.exit(0);
+        return;
       }
       console.error(`\n[error] ${err.message}`);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
@@ -75,7 +74,7 @@ program
       }
     } catch (err: any) {
       console.error(`\n[error] ${err.message}`);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
@@ -91,7 +90,7 @@ program
       }
     } catch (err: any) {
       console.error(`\n[error] ${err.message}`);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
@@ -131,15 +130,11 @@ program
       if (pushResult.exported > 0) pushParts.push(`${pushResult.exported} экспорт`);
       if (pushResult.errors > 0) pushParts.push(`${pushResult.errors} ошибок`);
 
-      console.log(
-        `  [pull] ${pullParts.length > 0 ? pullParts.join(", ") : "нет изменений"}`,
-      );
-      console.log(
-        `  [push] ${pushParts.length > 0 ? pushParts.join(", ") : "нет изменений"}`,
-      );
+      console.log(`  [pull] ${pullParts.length > 0 ? pullParts.join(", ") : "нет изменений"}`);
+      console.log(`  [push] ${pushParts.length > 0 ? pushParts.join(", ") : "нет изменений"}`);
     } catch (err: any) {
       console.error(`\n[error] ${err.message}`);
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 
@@ -175,7 +170,7 @@ program
         console.error();
         console.error("Запустите opencode-sync setup для настройки");
       }
-      process.exit(1);
+      process.exitCode = 1;
     }
   });
 

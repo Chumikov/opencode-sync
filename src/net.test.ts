@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(),
 }));
 
-import { checkInternet } from "./net.js";
 import { lookup } from "node:dns/promises";
+import { checkInternet } from "./net.js";
 
 const mockLookup = vi.mocked(lookup);
 

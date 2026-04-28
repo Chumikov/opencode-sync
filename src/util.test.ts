@@ -1,18 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  validateSessionId,
+  acquireLock,
+  EXPORT_CONCURRENCY,
   log,
   promisePool,
-  acquireLock,
+  RETRY_ATTEMPTS,
   releaseLock,
+  SESSION_ID_RE,
+  validateSessionId,
   withLock,
   withLockAsync,
   withRetry,
-  SESSION_ID_RE,
-  EXPORT_CONCURRENCY,
-  RETRY_ATTEMPTS,
 } from "./util.js";
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
@@ -134,9 +134,7 @@ describe("util.ts", () => {
 
     it("удаляет lock-файл при release", () => {
       releaseLock("/tmp/test");
-      expect(unlinkSync).toHaveBeenCalledWith(
-        expect.stringContaining(".opencode-sync.lock"),
-      );
+      expect(unlinkSync).toHaveBeenCalledWith(expect.stringContaining(".opencode-sync.lock"));
     });
 
     it("бросает ошибку если процесс уже запущен", () => {
@@ -216,11 +214,15 @@ describe("util.ts", () => {
 
     it("повторяет при неудаче", async () => {
       let attempts = 0;
-      const result = await withRetry(() => {
-        attempts++;
-        if (attempts < 3) throw new Error("fail");
-        return "ok";
-      }, 3, 1);
+      const result = await withRetry(
+        () => {
+          attempts++;
+          if (attempts < 3) throw new Error("fail");
+          return "ok";
+        },
+        3,
+        1,
+      );
 
       expect(result).toBe("ok");
       expect(attempts).toBe(3);
@@ -228,9 +230,13 @@ describe("util.ts", () => {
 
     it("бросает последнюю ошибку после всех попыток", async () => {
       await expect(
-        withRetry(() => {
-          throw new Error("always fail");
-        }, 2, 1),
+        withRetry(
+          () => {
+            throw new Error("always fail");
+          },
+          2,
+          1,
+        ),
       ).rejects.toThrow("always fail");
     });
 

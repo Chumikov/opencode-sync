@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 
 const SHELL_FUNCTION_BLOCK_START = "# >>> opencode-sync >>>";
 const SHELL_FUNCTION_BLOCK_END = "# <<< opencode-sync <<<";
@@ -125,9 +125,9 @@ ${SHELL_FUNCTION_BLOCK_END}`;
 
   const newContent = existingContent
     ? existingContent.endsWith("\n")
-      ? existingContent + "\n" + block + "\n"
-      : existingContent + "\n\n" + block + "\n"
-    : block + "\n";
+      ? `${existingContent}\n${block}\n`
+      : `${existingContent}\n\n${block}\n`
+    : `${block}\n`;
 
   mkdirSync(dirname(rcFile), { recursive: true });
   writeFileSync(rcFile, newContent, "utf-8");
@@ -137,7 +137,7 @@ function installFishFunction(rcFile: string): void {
   if (isFishFunctionInstalled(rcFile)) return;
 
   mkdirSync(dirname(rcFile), { recursive: true });
-  writeFileSync(rcFile, FISH_FUNCTION + "\n", "utf-8");
+  writeFileSync(rcFile, `${FISH_FUNCTION}\n`, "utf-8");
 }
 
 function installPsFunction(rcFile: string): void {
@@ -154,9 +154,9 @@ ${PS_BLOCK_END}`;
 
   const newContent = existingContent
     ? existingContent.endsWith("\n")
-      ? existingContent + "\n" + block + "\n"
-      : existingContent + "\n\n" + block + "\n"
-    : block + "\n";
+      ? `${existingContent}\n${block}\n`
+      : `${existingContent}\n\n${block}\n`
+    : `${block}\n`;
 
   mkdirSync(dirname(rcFile), { recursive: true });
   writeFileSync(rcFile, newContent, "utf-8");

@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { GIT_TIMEOUT_MS, GIT_MAX_BUFFER, log, withRetry } from "./util.js";
-import { checkInternet } from "./net.js";
 import type { SyncConfig } from "./config.js";
+import { checkInternet } from "./net.js";
+import { GIT_MAX_BUFFER, GIT_TIMEOUT_MS, log, withRetry } from "./util.js";
 
 const GIT_BIN = process.env.GIT_BIN || "git";
 
@@ -72,10 +72,7 @@ export function ensureRepo(repoUrl: string, localPath: string, branch: string): 
 
 export function pull(localPath: string, branch: string): boolean {
   try {
-    const result = runGit(
-      ["pull", "--rebase", "--strategy-option", "theirs", "origin", branch],
-      localPath,
-    );
+    const result = runGit(["pull", "--rebase", "--strategy-option", "theirs", "origin", branch], localPath);
 
     const hasChanges = !result.includes("Already up to date");
     if (hasChanges) {
@@ -182,14 +179,24 @@ function parseAccessError(stderr: string): { error: string; hint: string } {
     };
   }
 
-  if (lower.includes("could not read username") || lower.includes("authentication failed") || lower.includes("fatal: could not read") || lower.includes("access denied")) {
+  if (
+    lower.includes("could not read username") ||
+    lower.includes("authentication failed") ||
+    lower.includes("fatal: could not read") ||
+    lower.includes("access denied")
+  ) {
     return {
       error: "Ошибка аутентификации",
       hint: `Для HTTPS-URL используйте personal access token:\n  https://<token>@github.com/user/repo.git\n\nТокен можно создать: GitHub → Settings → Developer settings → Personal access tokens\n\nИли переключитесь на SSH:\n  git@github.com:user/repo.git`,
     };
   }
 
-  if (lower.includes("timed out") || lower.includes("could not resolve") || lower.includes("connection refused") || lower.includes("network is unreachable")) {
+  if (
+    lower.includes("timed out") ||
+    lower.includes("could not resolve") ||
+    lower.includes("connection refused") ||
+    lower.includes("network is unreachable")
+  ) {
     return {
       error: "Не удалось подключиться к серверу",
       hint: `Проверьте:\n  1. Интернет-соединение: ping github.com\n  2. Доступность хоста (возможно, блокируется firewall/VPN)\n  3. Правильность URL`,

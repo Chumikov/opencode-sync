@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => '{"version": "1.0.0"}'),
@@ -59,12 +59,12 @@ vi.mock("@clack/prompts", () => ({
   isCancel: vi.fn(() => false),
 }));
 
-import { runSetup, SetupCancelledError, SetupFailedError } from "./setup.js";
-import { saveConfig } from "./config.js";
-import { clone, listBranches, isGitRepo, maskUrl, checkRepoAccess } from "./git.js";
-import { installShellFunction } from "./shell.js";
-import * as clack from "@clack/prompts";
 import { existsSync } from "node:fs";
+import * as clack from "@clack/prompts";
+import { saveConfig } from "./config.js";
+import { checkRepoAccess, clone, isGitRepo, listBranches, maskUrl } from "./git.js";
+import { runSetup, SetupCancelledError, SetupFailedError } from "./setup.js";
+import { installShellFunction } from "./shell.js";
 
 describe("setup.ts", () => {
   beforeEach(() => {
@@ -115,9 +115,7 @@ describe("setup.ts", () => {
       vi.mocked(isGitRepo).mockReturnValue(true);
       vi.mocked(listBranches).mockReturnValue(overrides.branches ?? []);
       if (overrides.branches && overrides.branches.length > 1) {
-        vi.mocked(clack.select).mockResolvedValue(
-          overrides.selectBranch ?? overrides.branches[0],
-        );
+        vi.mocked(clack.select).mockResolvedValue(overrides.selectBranch ?? overrides.branches[0]);
       }
     } else {
       vi.mocked(clone).mockImplementation(() => {});
@@ -138,11 +136,7 @@ describe("setup.ts", () => {
     await runSetup();
 
     expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/sessions.git");
-    expect(clone).toHaveBeenCalledWith(
-      "git@github.com:user/sessions.git",
-      expect.any(String),
-      "main",
-    );
+    expect(clone).toHaveBeenCalledWith("git@github.com:user/sessions.git", expect.any(String), "main");
     expect(saveConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         repo: "git@github.com:user/sessions.git",
@@ -245,9 +239,7 @@ describe("setup.ts", () => {
 
     expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/old.git");
     expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/new.git");
-    expect(saveConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ repo: "git@github.com:user/new.git" }),
-    );
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ repo: "git@github.com:user/new.git" }));
   });
 
   it("выходит при отмене из меню ошибки доступа", async () => {
@@ -310,9 +302,7 @@ describe("setup.ts", () => {
 
     await runSetup();
 
-    expect(saveConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ branch: "dev" }),
-    );
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ branch: "dev" }));
   });
 
   it("берёт единственную ветку автоматически", async () => {
@@ -323,9 +313,7 @@ describe("setup.ts", () => {
 
     await runSetup();
 
-    expect(saveConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ branch: "develop" }),
-    );
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ branch: "develop" }));
   });
 
   it("выходит если клонирование не удалось и репо не существует", async () => {

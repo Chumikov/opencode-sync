@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import figlet from "figlet";
 import figletBig from "figlet/importable-fonts/Big.js";

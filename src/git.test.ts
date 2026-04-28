@@ -1,17 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  maskUrl,
-  isGitRepo,
-  clone,
-  ensureRepo,
-  pull,
-  commit,
-  push,
-  listBranches,
-  getDefaultBranch,
   checkRepoAccess,
-  preflightCheck,
+  clone,
+  commit,
+  ensureRepo,
+  getDefaultBranch,
+  isGitRepo,
+  listBranches,
+  maskUrl,
   PreflightError,
+  preflightCheck,
+  pull,
+  push,
 } from "./git.js";
 
 vi.mock("node:child_process", () => ({
@@ -56,15 +56,11 @@ describe("git.ts", () => {
     });
 
     it("маскирует HTTPS-URL с токеном", () => {
-      expect(maskUrl("https://user:token@github.com/user/repo.git")).toBe(
-        "https://***:***@github.com/user/repo.git",
-      );
+      expect(maskUrl("https://user:token@github.com/user/repo.git")).toBe("https://***:***@github.com/user/repo.git");
     });
 
     it("не изменяет HTTPS-URL без credentials", () => {
-      expect(maskUrl("https://github.com/user/repo.git")).toBe(
-        "https://github.com/user/repo.git",
-      );
+      expect(maskUrl("https://github.com/user/repo.git")).toBe("https://github.com/user/repo.git");
     });
 
     it("маскирует невалидный URL", () => {
@@ -96,11 +92,7 @@ describe("git.ts", () => {
 
       clone("git@github.com:user/repo.git", "/tmp/clone", "main");
 
-      expect(mockGit).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.arrayContaining(["clone"]),
-        expect.any(Object),
-      );
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(["clone"]), expect.any(Object));
     });
 
     it("бросает ошибку при неудачном clone", () => {
@@ -121,24 +113,16 @@ describe("git.ts", () => {
 
       ensureRepo("git@github.com:user/repo.git", "/tmp/new", "main");
 
-      expect(mockGit).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.arrayContaining(["clone"]),
-        expect.any(Object),
-      );
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), expect.arrayContaining(["clone"]), expect.any(Object));
     });
 
     it("обновляет remote URL если не совпадает", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      mockGit
-        .mockReturnValueOnce("git@github.com:old/repo.git\n")
-        .mockReturnValueOnce("");
+      mockGit.mockReturnValueOnce("git@github.com:old/repo.git\n").mockReturnValueOnce("");
 
       ensureRepo("git@github.com:new/repo.git", "/tmp/existing", "main");
 
-      const setUrlCall = mockGit.mock.calls.find((c) =>
-        (c[1] as string[]).includes("set-url"),
-      );
+      const setUrlCall = mockGit.mock.calls.find((c) => (c[1] as string[]).includes("set-url"));
       expect(setUrlCall).toBeDefined();
     });
 
@@ -152,9 +136,7 @@ describe("git.ts", () => {
 
       ensureRepo("git@github.com:user/repo.git", "/tmp/existing", "main");
 
-      const addCall = mockGit.mock.calls.find((c) =>
-        (c[1] as string[]).includes("add"),
-      );
+      const addCall = mockGit.mock.calls.find((c) => (c[1] as string[]).includes("add"));
       expect(addCall).toBeDefined();
     });
 
@@ -244,9 +226,7 @@ describe("git.ts", () => {
     });
 
     it("возвращает false если нет изменений", () => {
-      mockGit
-        .mockReturnValueOnce("")
-        .mockReturnValueOnce("");
+      mockGit.mockReturnValueOnce("").mockReturnValueOnce("");
 
       const result = commit("/tmp/repo", "my-device");
 
@@ -265,10 +245,8 @@ describe("git.ts", () => {
 
       commit("/tmp/repo", "dev");
 
-      const commitCall = mockGit.mock.calls.find((c) =>
-        (c[1] as string[]).includes("commit"),
-      );
-      const msg = (commitCall![1] as string[])[2] as string;
+      const commitCall = mockGit.mock.calls.find((c) => (c[1] as string[]).includes("commit"));
+      const msg = (commitCall?.[1] as string[])[2] as string;
       const after = Date.now();
       const tsStr = msg.replace("sync: dev @ ", "");
       const ts = new Date(tsStr).getTime();
@@ -290,9 +268,7 @@ describe("git.ts", () => {
 
       await push("/tmp/repo", "main", "my-device");
 
-      const pushCall = mockGit.mock.calls.find((c) =>
-        (c[1] as string[]).includes("push"),
-      );
+      const pushCall = mockGit.mock.calls.find((c) => (c[1] as string[]).includes("push"));
       expect(pushCall).toBeDefined();
     });
 
@@ -312,32 +288,23 @@ describe("git.ts", () => {
 
       await push("/tmp/repo", "main", "my-device");
 
-      const pushCall = mockGit.mock.calls.find((c) =>
-        (c[1] as string[]).includes("push"),
-      );
+      const pushCall = mockGit.mock.calls.find((c) => (c[1] as string[]).includes("push"));
       expect(pushCall).toBeDefined();
     });
 
     it("не push'ит если нет изменений", async () => {
-      mockGit
-        .mockReturnValueOnce("Already up to date.")
-        .mockReturnValueOnce("")
-        .mockReturnValueOnce("");
+      mockGit.mockReturnValueOnce("Already up to date.").mockReturnValueOnce("").mockReturnValueOnce("");
 
       await push("/tmp/repo", "main", "my-device");
 
-      const pushCall = mockGit.mock.calls.find(
-        (c) => (c[1] as string[])[0] === "push",
-      );
+      const pushCall = mockGit.mock.calls.find((c) => (c[1] as string[])[0] === "push");
       expect(pushCall).toBeUndefined();
     });
   });
 
   describe("listBranches", () => {
     it("возвращает список веток без origin/ и HEAD", () => {
-      mockGit.mockReturnValue(
-        "  origin/main\n  origin/develop\n  origin/HEAD -> origin/main\n",
-      );
+      mockGit.mockReturnValue("  origin/main\n  origin/develop\n  origin/HEAD -> origin/main\n");
 
       const branches = listBranches("/tmp/repo");
 
@@ -548,11 +515,7 @@ describe("git.ts", () => {
     it("проходит успешно если интернет и доступ есть", async () => {
       await expect(preflightCheck(config)).resolves.toBeUndefined();
       expect(mockCheckInternet).toHaveBeenCalled();
-      expect(mockGit).toHaveBeenCalledWith(
-        expect.any(String),
-        ["ls-remote", config.repo, "HEAD"],
-        expect.any(Object),
-      );
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), ["ls-remote", config.repo, "HEAD"], expect.any(Object));
     });
 
     it("бросает PreflightError если нет интернета", async () => {

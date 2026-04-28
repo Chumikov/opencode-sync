@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -11,8 +11,8 @@ vi.mock("node:os", () => ({
   homedir: () => "/home/testuser",
 }));
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { installShellFunction, getShellInfo, isShellFunctionInstalled } from "./shell.js";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { getShellInfo, installShellFunction, isShellFunctionInstalled } from "./shell.js";
 
 describe("shell.ts", () => {
   let originalShell: string | undefined;
@@ -38,8 +38,8 @@ describe("shell.ts", () => {
       process.env.SHELL = "/bin/zsh";
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("zsh");
-      expect(info!.rcFile).toContain(".zshrc");
+      expect(info?.shellName).toBe("zsh");
+      expect(info?.rcFile).toContain(".zshrc");
     });
 
     it("определяет bash с .bashrc", () => {
@@ -47,19 +47,17 @@ describe("shell.ts", () => {
       vi.mocked(existsSync).mockReturnValue(true);
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("bash");
-      expect(info!.rcFile).toContain(".bashrc");
+      expect(info?.shellName).toBe("bash");
+      expect(info?.rcFile).toContain(".bashrc");
     });
 
     it("определяет bash с .bash_profile", () => {
       process.env.SHELL = "/bin/bash";
-      vi.mocked(existsSync)
-        .mockReturnValueOnce(false)
-        .mockReturnValueOnce(true);
+      vi.mocked(existsSync).mockReturnValueOnce(false).mockReturnValueOnce(true);
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("bash");
-      expect(info!.rcFile).toContain(".bash_profile");
+      expect(info?.shellName).toBe("bash");
+      expect(info?.rcFile).toContain(".bash_profile");
     });
 
     it("fallback на .bashrc если оба файла отсутствуют", () => {
@@ -67,31 +65,31 @@ describe("shell.ts", () => {
       vi.mocked(existsSync).mockReturnValue(false);
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("bash");
-      expect(info!.rcFile).toContain(".bashrc");
+      expect(info?.shellName).toBe("bash");
+      expect(info?.rcFile).toContain(".bashrc");
     });
 
     it("определяет fish", () => {
       process.env.SHELL = "/bin/fish";
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("fish");
-      expect(info!.rcFile).toContain("fish");
-      expect(info!.rcFile).toContain("opencode.fish");
+      expect(info?.shellName).toBe("fish");
+      expect(info?.rcFile).toContain("fish");
+      expect(info?.rcFile).toContain("opencode.fish");
     });
 
     it("определяет PowerShell по существующему профилю pwsh", () => {
       process.env.SHELL = "";
       delete process.env.PSModulePath;
-      vi.mocked(existsSync).mockImplementation((p: any) =>
-        String(p).includes("PowerShell") && !String(p).includes("Windows"),
+      vi.mocked(existsSync).mockImplementation(
+        (p: any) => String(p).includes("PowerShell") && !String(p).includes("Windows"),
       );
 
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("powershell");
-      expect(info!.rcFile).toContain("PowerShell");
-      expect(info!.rcFile).toContain("Microsoft.PowerShell_profile.ps1");
+      expect(info?.shellName).toBe("powershell");
+      expect(info?.rcFile).toContain("PowerShell");
+      expect(info?.rcFile).toContain("Microsoft.PowerShell_profile.ps1");
     });
 
     it("определяет PowerShell по PSModulePath", () => {
@@ -101,7 +99,7 @@ describe("shell.ts", () => {
 
       const info = getShellInfo();
       expect(info).not.toBeNull();
-      expect(info!.shellName).toBe("powershell");
+      expect(info?.shellName).toBe("powershell");
     });
 
     it("возвращает null для неизвестного shell без PowerShell", () => {
@@ -148,12 +146,8 @@ describe("shell.ts", () => {
     it("не перезаписывает если блок уже установлен", () => {
       process.env.SHELL = "/bin/zsh";
 
-      vi.mocked(existsSync)
-        .mockReturnValueOnce(true)
-        .mockReturnValue(false);
-      vi.mocked(readFileSync).mockReturnValue(
-        "# >>> opencode-sync >>>\nopencode() {}\n# <<< opencode-sync <<<\n",
-      );
+      vi.mocked(existsSync).mockReturnValueOnce(true).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue("# >>> opencode-sync >>>\nopencode() {}\n# <<< opencode-sync <<<\n");
 
       const result = installShellFunction();
 
@@ -186,11 +180,7 @@ describe("shell.ts", () => {
       const result = installShellFunction();
 
       expect(result.installed).toBe(true);
-      expect(writeFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining("opencode()"),
-        "utf-8",
-      );
+      expect(writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("opencode()"), "utf-8");
     });
 
     it("добавляет функцию opencode() с command opencode", () => {
@@ -201,7 +191,7 @@ describe("shell.ts", () => {
       installShellFunction();
 
       const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
-      expect(written).toContain("command opencode \"$@\"");
+      expect(written).toContain('command opencode "$@"');
       expect(written).toContain("command opencode-sync pull");
       expect(written).toContain("command opencode-sync push");
     });
@@ -217,10 +207,7 @@ describe("shell.ts", () => {
       expect(result.installed).toBe(true);
       expect(result.shellName).toBe("fish");
       expect(result.rcFile).toContain("opencode.fish");
-      expect(mkdirSync).toHaveBeenCalledWith(
-        expect.stringContaining("functions"),
-        { recursive: true },
-      );
+      expect(mkdirSync).toHaveBeenCalledWith(expect.stringContaining("functions"), { recursive: true });
       expect(writeFileSync).toHaveBeenCalledWith(
         expect.stringContaining("opencode.fish"),
         expect.stringContaining("function opencode"),

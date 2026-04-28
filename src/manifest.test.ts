@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -8,14 +8,8 @@ vi.mock("node:fs", () => ({
   readdirSync: vi.fn(),
 }));
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import {
-  readManifest,
-  writeManifest,
-  getGlobalSessionSet,
-  findOrphanFiles,
-  manifestsDir,
-} from "./manifest.js";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { findOrphanFiles, getGlobalSessionSet, manifestsDir, readManifest, writeManifest } from "./manifest.js";
 
 describe("manifest.ts", () => {
   beforeEach(() => {
@@ -37,9 +31,7 @@ describe("manifest.ts", () => {
 
     it("читает sessionIds из JSON", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ sessionIds: ["s1", "s2", "s3"] }),
-      );
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ sessionIds: ["s1", "s2", "s3"] }));
 
       const result = readManifest("/tmp/sync", "macbook");
 
@@ -62,11 +54,7 @@ describe("manifest.ts", () => {
       writeManifest("/tmp/sync", "macbook", new Set(["s1", "s2"]));
 
       expect(mkdirSync).toHaveBeenCalledWith("/tmp/sync/manifests", { recursive: true });
-      expect(writeFileSync).toHaveBeenCalledWith(
-        "/tmp/sync/manifests/macbook.json",
-        expect.any(String),
-        "utf-8",
-      );
+      expect(writeFileSync).toHaveBeenCalledWith("/tmp/sync/manifests/macbook.json", expect.any(String), "utf-8");
 
       const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
       const parsed = JSON.parse(written);

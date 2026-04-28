@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockConfig, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import { pushSessions } from "./push.js";
-import { mockSessionInfo, mockSessionExport, mockConfig } from "./__tests__/helpers.js";
 
 vi.mock("./config.js", () => ({
   loadConfig: vi.fn(),
@@ -21,7 +21,10 @@ vi.mock("./git.js", () => ({
   preflightCheck: vi.fn(async () => {}),
   PreflightError: class PreflightError extends Error {
     hint: string;
-    constructor(m: string, h: string) { super(m); this.hint = h; }
+    constructor(m: string, h: string) {
+      super(m);
+      this.hint = h;
+    }
   },
 }));
 
@@ -43,8 +46,8 @@ vi.mock("./manifest.js", () => ({
 }));
 
 import { loadConfig, sessionsDir } from "./config.js";
-import { listSessions, exportSessionAsync, saveSessionToFile, isLocalNewer, checkOpenCodeInstalled } from "./session.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
+import { exportSessionAsync, isLocalNewer, listSessions, saveSessionToFile } from "./session.js";
 import { log, promisePool, withLockAsync } from "./util.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -93,15 +96,10 @@ describe("push.ts", () => {
   });
 
   it("подсчитывает ошибки при экспорте", async () => {
-    const sessions = [
-      mockSessionInfo({ id: "s1", title: "OK" }),
-      mockSessionInfo({ id: "s2", title: "FAIL" }),
-    ];
+    const sessions = [mockSessionInfo({ id: "s1", title: "OK" }), mockSessionInfo({ id: "s2", title: "FAIL" })];
     mockListSessions.mockReturnValue(sessions);
     mockIsLocalNewer.mockReturnValue(true);
-    mockExportAsync
-      .mockResolvedValueOnce(mockSessionExport())
-      .mockRejectedValueOnce(new Error("export error"));
+    mockExportAsync.mockResolvedValueOnce(mockSessionExport()).mockRejectedValueOnce(new Error("export error"));
 
     const result = await pushSessions();
 
@@ -141,9 +139,7 @@ describe("push.ts", () => {
     expect(result.exported).toBe(1);
     expect(mockExportAsync).not.toHaveBeenCalled();
     expect(mockGitPush).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("[dry-run]"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[dry-run]"));
   });
 
   it("dry-run не сохраняет файлы и не push'ит", async () => {
@@ -162,11 +158,7 @@ describe("push.ts", () => {
 
     await pushSessions();
 
-    expect(mockEnsureRepo).toHaveBeenCalledWith(
-      mockConfig().repo,
-      mockConfig().localPath,
-      mockConfig().branch,
-    );
+    expect(mockEnsureRepo).toHaveBeenCalledWith(mockConfig().repo, mockConfig().localPath, mockConfig().branch);
   });
 
   it("пропускает сессии с пустым id", async () => {
@@ -187,9 +179,7 @@ describe("push.ts", () => {
 
     await pushSessions();
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("2 сессий"),
-    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("2 сессий"));
 
     logSpy.mockRestore();
   });
@@ -202,9 +192,7 @@ describe("push.ts", () => {
     await pushSessions({ sessions });
 
     expect(mockListSessions).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("1 сессий"),
-    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("1 сессий"));
 
     logSpy.mockRestore();
   });
@@ -223,8 +211,12 @@ describe("push.ts", () => {
   it("вызывает preflightCheck перед ensureRepo", async () => {
     mockListSessions.mockReturnValue([]);
     const callOrder: string[] = [];
-    mockPreflightCheck.mockImplementation(async () => { callOrder.push("preflight"); });
-    mockEnsureRepo.mockImplementation(() => { callOrder.push("ensureRepo"); });
+    mockPreflightCheck.mockImplementation(async () => {
+      callOrder.push("preflight");
+    });
+    mockEnsureRepo.mockImplementation(() => {
+      callOrder.push("ensureRepo");
+    });
 
     await pushSessions();
 

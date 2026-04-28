@@ -1,10 +1,11 @@
-import * as clack from "@clack/prompts";
 import { existsSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
-import { saveConfig, DEFAULT_LOCAL_PATH, CONFIG_FILE_PATH } from "./config.js";
-import { clone, maskUrl, listBranches, isGitRepo, checkRepoAccess } from "./git.js";
-import { installShellFunction } from "./shell.js";
+import * as clack from "@clack/prompts";
+import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, saveConfig } from "./config.js";
+import { checkRepoAccess, clone, isGitRepo, listBranches, maskUrl } from "./git.js";
 import { checkOpenCodeInstalled } from "./session.js";
+import { installShellFunction } from "./shell.js";
+
 class SetupCancelledError extends Error {
   constructor() {
     super("Настройка отменена");
@@ -56,12 +57,7 @@ export async function runSetup(): Promise<void> {
     validate: (value) => {
       const v = value ?? "";
       if (!v.trim()) return "Укажите URL репозитория";
-      if (
-        !v.startsWith("git@") &&
-        !v.startsWith("https://") &&
-        !v.startsWith("http://") &&
-        !v.startsWith("ssh://")
-      ) {
+      if (!v.startsWith("git@") && !v.startsWith("https://") && !v.startsWith("http://") && !v.startsWith("ssh://")) {
         return "URL должен начинаться с git@, https://, http:// или ssh://";
       }
     },
@@ -154,7 +150,9 @@ export async function runSetup(): Promise<void> {
 
     if (isGitRepo(localPath) && listBranches(localPath).length === 0) {
       log("[setup] Удаляю partial clone...");
-      try { rmSync(localPath, { recursive: true, force: true }); } catch {}
+      try {
+        rmSync(localPath, { recursive: true, force: true });
+      } catch {}
     }
 
     if (isGitRepo(localPath)) {
@@ -182,9 +180,7 @@ export async function runSetup(): Promise<void> {
       }
     } else {
       s.stop("Не удалось клонировать репозиторий");
-      clack.outro(
-        `Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`,
-      );
+      clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);
       throw new SetupFailedError("Не удалось клонировать репозиторий");
     }
   }
@@ -213,9 +209,7 @@ export async function runSetup(): Promise<void> {
     );
   } else {
     s2.stop("Shell не поддерживается (поддерживаются: bash, zsh, fish, PowerShell)");
-    clack.log.warn(
-      "Автосинхронизация не настроена. Используйте opencode-sync push/pull вручную",
-    );
+    clack.log.warn("Автосинхронизация не настроена. Используйте opencode-sync push/pull вручную");
   }
 
   clack.outro("Настройка завершена!");

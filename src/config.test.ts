@@ -1,12 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  loadConfig,
-  saveConfig,
-  sessionsDir,
-  CONFIG_FILE_PATH,
-  DEFAULT_LOCAL_PATH,
-} from "./config.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncConfig } from "./config.js";
+import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, loadConfig, saveConfig, sessionsDir } from "./config.js";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
@@ -21,7 +15,7 @@ vi.mock("node:os", () => ({
   hostname: () => "testhost",
 }));
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const validConfigJson = JSON.stringify({
   repo: "git@github.com:user/sync.git",
@@ -85,9 +79,7 @@ describe("config.ts", () => {
 
     it("использует hostname как fallback для deviceName", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ repo: "git@github.com:user/repo.git" }),
-      );
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ repo: "git@github.com:user/repo.git" }));
 
       const config = loadConfig();
 
@@ -96,9 +88,7 @@ describe("config.ts", () => {
 
     it("использует DEFAULT_LOCAL_PATH как fallback", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ repo: "git@github.com:user/repo.git" }),
-      );
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ repo: "git@github.com:user/repo.git" }));
 
       const config = loadConfig();
 
@@ -107,9 +97,7 @@ describe("config.ts", () => {
 
     it("использует main как fallback для branch", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      vi.mocked(readFileSync).mockReturnValue(
-        JSON.stringify({ repo: "git@github.com:user/repo.git" }),
-      );
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ repo: "git@github.com:user/repo.git" }));
 
       const config = loadConfig();
 
@@ -126,9 +114,7 @@ describe("config.ts", () => {
       const config = loadConfig();
 
       expect(config.repo).toBe("git@github.com:user/repo.git");
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Не удалось прочитать"),
-      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Не удалось прочитать"));
 
       warnSpy.mockRestore();
     });
@@ -164,11 +150,7 @@ describe("config.ts", () => {
       expect(mkdirSync).toHaveBeenCalledWith(expect.any(String), {
         recursive: true,
       });
-      expect(writeFileSync).toHaveBeenCalledWith(
-        CONFIG_FILE_PATH,
-        expect.any(String),
-        "utf-8",
-      );
+      expect(writeFileSync).toHaveBeenCalledWith(CONFIG_FILE_PATH, expect.any(String), "utf-8");
       expect(chmodSync).toHaveBeenCalledWith(CONFIG_FILE_PATH, 0o600);
     });
 
@@ -215,9 +197,7 @@ describe("config.ts", () => {
         branch: "main",
       });
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Конфигурация сохранена"),
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Конфигурация сохранена"));
 
       logSpy.mockRestore();
     });

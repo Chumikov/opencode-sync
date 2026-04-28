@@ -1,6 +1,6 @@
 {
   "name": "opencode-sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Git-based session synchronization for OpenCode",
   "type": "module",
   "bin": {
@@ -16,7 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run build"
+    "lint": "biome check src/",
+    "lint:fix": "biome check --fix --unsafe src/",
+    "prepublishOnly": "npm run build",
+    "prepare": "husky"
   },
   "engines": {
     "node": ">=18"
@@ -27,9 +30,11 @@
     "figlet": "^1.11.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
     "@types/figlet": "^1.7.0",
     "@types/node": "^22.15.0",
     "@vitest/coverage-v8": "^4.1.5",
+    "husky": "^9.1.7",
     "typescript": "^5.8.3",
     "vitest": "^4.1.5"
   }

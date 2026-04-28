@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => '{"version": "1.0.0"}'),
@@ -47,7 +47,10 @@ vi.mock("./git.js", () => ({
   preflightCheck: vi.fn(async () => {}),
   PreflightError: class PreflightError extends Error {
     hint: string;
-    constructor(m: string, h: string) { super(m); this.hint = h; }
+    constructor(m: string, h: string) {
+      super(m);
+      this.hint = h;
+    }
   },
 }));
 
@@ -115,8 +118,7 @@ describe("index.ts CLI", () => {
     vi.resetModules();
     try {
       await import("./index.js");
-    } catch (_err: any) {
-    }
+    } catch (_err: any) {}
   }
 
   describe("setup", () => {
@@ -215,9 +217,7 @@ describe("index.ts CLI", () => {
 
       await runCommand(["status"]);
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Конфиг:"),
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Конфиг:"));
 
       logSpy.mockRestore();
       errorSpy.mockRestore();
@@ -228,9 +228,7 @@ describe("index.ts CLI", () => {
 
       await runCommand(["status"]);
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Remote доступ:  ok"),
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Remote доступ:  ok"));
 
       logSpy.mockRestore();
     });
@@ -246,9 +244,7 @@ describe("index.ts CLI", () => {
 
       await runCommand(["status"]);
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Нет SSH-доступа"),
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Нет SSH-доступа"));
 
       logSpy.mockRestore();
     });

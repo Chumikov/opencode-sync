@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => '{"version": "1.0.0"}'),
@@ -24,8 +24,8 @@ vi.mock("figlet/importable-fonts/Big.js", () => ({
   default: "MOCK_FONT_DATA",
 }));
 
-import { printBanner, getBanner } from "./banner.js";
 import figlet from "figlet";
+import { getBanner, printBanner } from "./banner.js";
 
 describe("banner.ts", () => {
   it("вызывает figlet.textSync с шрифтом Big", () => {

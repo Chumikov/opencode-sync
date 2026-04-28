@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockConfig, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import { pullSessions } from "./pull.js";
-import { mockSessionInfo, mockSessionExport, mockConfig } from "./__tests__/helpers.js";
 
 vi.mock("node:fs", () => ({
   readdirSync: vi.fn(),
@@ -32,7 +32,10 @@ vi.mock("./git.js", () => ({
   preflightCheck: vi.fn(async () => {}),
   PreflightError: class PreflightError extends Error {
     hint: string;
-    constructor(m: string, h: string) { super(m); this.hint = h; }
+    constructor(m: string, h: string) {
+      super(m);
+      this.hint = h;
+    }
   },
 }));
 
@@ -45,12 +48,10 @@ vi.mock("./manifest.js", () => ({
   getGlobalSessionSet: vi.fn(() => new Set()),
 }));
 
-
-
 import { readdirSync, statSync } from "node:fs";
 import { loadConfig, sessionsDir } from "./config.js";
-import { getSessionMap, readSessionFromFile, importSession, isRemoteNewer, deleteSession, checkOpenCodeInstalled } from "./session.js";
-import { pull as gitPull, ensureRepo, preflightCheck } from "./git.js";
+import { ensureRepo, pull as gitPull, preflightCheck } from "./git.js";
+import { getSessionMap, importSession, isRemoteNewer, readSessionFromFile } from "./session.js";
 import { log, withLock } from "./util.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -65,7 +66,7 @@ const mockPreflightCheck = vi.mocked(preflightCheck);
 const mockReaddirSync = vi.mocked(readdirSync);
 const mockStatSync = vi.mocked(statSync);
 const mockLog = vi.mocked(log);
-const mockWithLock = vi.mocked(withLock);
+const _mockWithLock = vi.mocked(withLock);
 
 function mockFsStructure(structure: Record<string, string[]>) {
   mockStatSync.mockImplementation((dir: any) => {
@@ -107,7 +108,7 @@ describe("pull.ts", () => {
     const fileData = mockSessionExport();
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -121,14 +122,12 @@ describe("pull.ts", () => {
 
   it("обновляет существующие сессии", async () => {
     const fileData = mockSessionExport();
-    const localMap = new Map([
-      ["01JTEST00000000000000000001", mockSessionInfo()],
-    ]);
+    const localMap = new Map([["01JTEST00000000000000000001", mockSessionInfo()]]);
     mockGetSessionMap.mockReturnValue(localMap);
 
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -144,7 +143,7 @@ describe("pull.ts", () => {
     const fileData = mockSessionExport();
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(false);
@@ -158,7 +157,7 @@ describe("pull.ts", () => {
   it("подсчитывает ошибки при чтении файлов", async () => {
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["bad.json"],
+      abc123: ["bad.json"],
     });
     mockReadSession.mockReturnValue(null);
 
@@ -171,7 +170,7 @@ describe("pull.ts", () => {
     const fileData = mockSessionExport();
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -190,22 +189,18 @@ describe("pull.ts", () => {
 
     const result = await pullSessions();
 
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("Ошибка при git pull"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Ошибка при git pull"));
     expect(result.imported).toBe(0);
   });
 
   it("dry-run показывает что будет импортировано", async () => {
     const fileData = mockSessionExport();
-    const localMap = new Map([
-      ["01JTEST00000000000000000001", mockSessionInfo()],
-    ]);
+    const localMap = new Map([["01JTEST00000000000000000001", mockSessionInfo()]]);
     mockGetSessionMap.mockReturnValue(localMap);
 
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -215,16 +210,14 @@ describe("pull.ts", () => {
     expect(result.imported).toBe(0);
     expect(result.updated).toBe(1);
     expect(mockImportSession).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("[dry-run]"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("[dry-run]"));
   });
 
   it("dry-run для новой сессии показывает 'импорт'", async () => {
     const fileData = mockSessionExport();
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -232,9 +225,7 @@ describe("pull.ts", () => {
     const result = await pullSessions({ dryRun: true });
 
     expect(result.imported).toBe(1);
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("импорт"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("импорт"));
   });
 
   it("возвращает пустой результат если нет файлов", async () => {
@@ -252,11 +243,7 @@ describe("pull.ts", () => {
 
     await pullSessions();
 
-    expect(mockEnsureRepo).toHaveBeenCalledWith(
-      mockConfig().repo,
-      mockConfig().localPath,
-      mockConfig().branch,
-    );
+    expect(mockEnsureRepo).toHaveBeenCalledWith(mockConfig().repo, mockConfig().localPath, mockConfig().branch);
   });
 
   it("вызывает git pull для подтягивания изменений", async () => {
@@ -264,17 +251,14 @@ describe("pull.ts", () => {
 
     await pullSessions();
 
-    expect(mockGitPull).toHaveBeenCalledWith(
-      mockConfig().localPath,
-      mockConfig().branch,
-    );
+    expect(mockGitPull).toHaveBeenCalledWith(mockConfig().localPath, mockConfig().branch);
   });
 
   it("обрабатывает вложенные поддиректории", async () => {
     const fileData1 = mockSessionExport({ info: { ...mockSessionExport().info, id: "s1" } });
     const fileData2 = mockSessionExport({ info: { ...mockSessionExport().info, id: "s2" } });
 
-    mockStatSync.mockImplementation(() => ({ isDirectory: () => true } as any));
+    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }) as any);
     mockReaddirSync.mockImplementation((dir: any) => {
       const dirStr = String(dir);
       if (dirStr.endsWith("sessions")) {
@@ -289,9 +273,7 @@ describe("pull.ts", () => {
       return [];
     });
 
-    mockReadSession
-      .mockReturnValueOnce(fileData1)
-      .mockReturnValueOnce(fileData2);
+    mockReadSession.mockReturnValueOnce(fileData1).mockReturnValueOnce(fileData2);
     mockIsRemoteNewer.mockReturnValue(true);
     mockImportSession.mockReturnValue(true);
 
@@ -306,15 +288,13 @@ describe("pull.ts", () => {
 
     await pullSessions();
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Готово"),
-    );
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Готово"));
 
     logSpy.mockRestore();
   });
 
   it("пропускает не-JSON файлы в директории", async () => {
-    mockStatSync.mockImplementation(() => ({ isDirectory: () => true } as any));
+    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }) as any);
     mockReaddirSync.mockImplementation((dir: any) => {
       const dirStr = String(dir);
       if (dirStr.endsWith("sessions")) {
@@ -345,7 +325,7 @@ describe("pull.ts", () => {
     const fileData = mockSessionExport({ info: { ...mockSessionExport().info, title: "" } });
     mockFsStructure({
       "/tmp/sync/sessions": ["abc123"],
-      "abc123": ["s1.json"],
+      abc123: ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
@@ -353,9 +333,7 @@ describe("pull.ts", () => {
 
     await pullSessions();
 
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("01JTEST00000000000000000001"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("01JTEST00000000000000000001"));
   });
 
   it("принимает pre-loaded localMap", async () => {
@@ -365,16 +343,18 @@ describe("pull.ts", () => {
     await pullSessions({ localMap });
 
     expect(mockGetSessionMap).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
-      expect.stringContaining("Локальных сессий: 1"),
-    );
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Локальных сессий: 1"));
   });
 
   it("вызывает preflightCheck перед ensureRepo", async () => {
     mockFsStructure({});
     const callOrder: string[] = [];
-    mockPreflightCheck.mockImplementation(async () => { callOrder.push("preflight"); });
-    mockEnsureRepo.mockImplementation(() => { callOrder.push("ensureRepo"); });
+    mockPreflightCheck.mockImplementation(async () => {
+      callOrder.push("preflight");
+    });
+    mockEnsureRepo.mockImplementation(() => {
+      callOrder.push("ensureRepo");
+    });
 
     await pullSessions();
 
