@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { loadConfig, CONFIG_FILE_PATH } from "./config.js";
 import { pushSessions } from "./push.js";
 import { pullSessions } from "./pull.js";
-import { isGitRepo, maskUrl } from "./git.js";
+import { isGitRepo, maskUrl, checkRepoAccess, PreflightError } from "./git.js";
 import { listSessions } from "./session.js";
 import { printBanner, VERSION } from "./banner.js";
 import { runSetup, SetupCancelledError } from "./setup.js";
@@ -146,7 +146,7 @@ program
 program
   .command("status")
   .description("Показать текущую конфигурацию и статус синхронизации")
-  .action(() => {
+  .action(async () => {
     try {
       const config = loadConfig();
 
@@ -156,10 +156,25 @@ program
       console.log(`  Локальный путь: ${config.localPath}`);
       console.log(`  Ветка:         ${config.branch}`);
       console.log(`  Repo exists:   ${isGitRepo(config.localPath) ? "да" : "нет"}`);
+
+      const access = checkRepoAccess(config.repo);
+      if (access.ok) {
+        console.log(`  Remote доступ:  ok`);
+      } else {
+        console.log(`  Remote доступ:  ${access.error}`);
+        console.log();
+        console.log(`  Подсказка: ${access.hint.split("\n").join("\n             ")}`);
+      }
     } catch (err: any) {
-      console.error(`[error] ${err.message}`);
-      console.error();
-      console.error("Запустите opencode-sync setup для настройки");
+      if (err instanceof PreflightError) {
+        console.error(`[error] ${err.message}`);
+        console.error();
+        console.error(`Подсказка: ${err.hint.split("\n").join("\n           ")}`);
+      } else {
+        console.error(`[error] ${err.message}`);
+        console.error();
+        console.error("Запустите opencode-sync setup для настройки");
+      }
       process.exit(1);
     }
   });

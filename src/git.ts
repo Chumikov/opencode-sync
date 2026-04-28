@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GIT_TIMEOUT_MS, GIT_MAX_BUFFER, log, withRetry } from "./util.js";
+import { checkInternet } from "./net.js";
+import type { SyncConfig } from "./config.js";
 
 const GIT_BIN = process.env.GIT_BIN || "git";
 
@@ -233,5 +235,29 @@ export function maskUrl(url: string): string {
     return parsed.toString();
   } catch {
     return "***";
+  }
+}
+
+export class PreflightError extends Error {
+  hint: string;
+  constructor(message: string, hint: string) {
+    super(message);
+    this.name = "PreflightError";
+    this.hint = hint;
+  }
+}
+
+export async function preflightCheck(config: SyncConfig): Promise<void> {
+  const hasInternet = await checkInternet();
+  if (!hasInternet) {
+    throw new PreflightError(
+      "Нет подключения к интернету",
+      `Проверьте:\n  1. WiFi/кабель подключён\n  2. DNS работает: nslookup google.com\n  3. Нет блокировки на уровне провайдера`,
+    );
+  }
+
+  const access = checkRepoAccess(config.repo);
+  if (!access.ok) {
+    throw new PreflightError(access.error, access.hint);
   }
 }

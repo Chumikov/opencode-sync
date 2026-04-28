@@ -10,6 +10,8 @@ import {
   listBranches,
   getDefaultBranch,
   checkRepoAccess,
+  preflightCheck,
+  PreflightError,
 } from "./git.js";
 
 vi.mock("node:child_process", () => ({
@@ -28,10 +30,20 @@ vi.mock("./util.js", () => ({
   withRetry: vi.fn((fn) => fn()),
 }));
 
+vi.mock("./net.js", () => ({
+  checkInternet: vi.fn(),
+}));
+
+vi.mock("./config.js", () => ({
+  SyncConfig: undefined,
+}));
+
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { checkInternet } from "./net.js";
 
 const mockGit = vi.mocked(execFileSync);
+const mockCheckInternet = vi.mocked(checkInternet);
 
 describe("git.ts", () => {
   beforeEach(() => {
@@ -517,6 +529,77 @@ describe("git.ts", () => {
       if (!result.ok) {
         expect(result.error).not.toContain("secret-repo");
       }
+    });
+  });
+
+  describe("preflightCheck", () => {
+    const config = {
+      repo: "git@github.com:user/repo.git",
+      deviceName: "test",
+      localPath: "/tmp/repo",
+      branch: "main",
+    };
+
+    beforeEach(() => {
+      mockCheckInternet.mockResolvedValue(true);
+      mockGit.mockReturnValue("abc123\tHEAD\n");
+    });
+
+    it("проходит успешно если интернет и доступ есть", async () => {
+      await expect(preflightCheck(config)).resolves.toBeUndefined();
+      expect(mockCheckInternet).toHaveBeenCalled();
+      expect(mockGit).toHaveBeenCalledWith(
+        expect.any(String),
+        ["ls-remote", config.repo, "HEAD"],
+        expect.any(Object),
+      );
+    });
+
+    it("бросает PreflightError если нет интернета", async () => {
+      mockCheckInternet.mockResolvedValue(false);
+
+      try {
+        await preflightCheck(config);
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PreflightError);
+        expect((err as PreflightError).message).toBe("Нет подключения к интернету");
+        expect((err as PreflightError).hint).toContain("WiFi");
+      }
+    });
+
+    it("не проверяет доступ к репо если нет интернета", async () => {
+      mockCheckInternet.mockResolvedValue(false);
+
+      try {
+        await preflightCheck(config);
+      } catch {}
+
+      expect(mockGit).not.toHaveBeenCalled();
+    });
+
+    it("бросает PreflightError если нет доступа к репозиторию", async () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "Permission denied (publickey).",
+        });
+      });
+
+      try {
+        await preflightCheck(config);
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PreflightError);
+        expect((err as PreflightError).message).toBe("Нет SSH-доступа к репозиторию");
+        expect((err as PreflightError).hint).toContain("ssh -T");
+      }
+    });
+
+    it("PreflightError содержит hint", () => {
+      const err = new PreflightError("test error", "test hint");
+      expect(err.name).toBe("PreflightError");
+      expect(err.message).toBe("test error");
+      expect(err.hint).toBe("test hint");
     });
   });
 });

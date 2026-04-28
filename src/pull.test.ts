@@ -29,6 +29,11 @@ vi.mock("./session.js", () => ({
 vi.mock("./git.js", () => ({
   pull: vi.fn(),
   ensureRepo: vi.fn(),
+  preflightCheck: vi.fn(async () => {}),
+  PreflightError: class PreflightError extends Error {
+    hint: string;
+    constructor(m: string, h: string) { super(m); this.hint = h; }
+  },
 }));
 
 vi.mock("./util.js", () => ({
@@ -45,7 +50,7 @@ vi.mock("./manifest.js", () => ({
 import { readdirSync, statSync } from "node:fs";
 import { loadConfig, sessionsDir } from "./config.js";
 import { getSessionMap, readSessionFromFile, importSession, isRemoteNewer, deleteSession, checkOpenCodeInstalled } from "./session.js";
-import { pull as gitPull, ensureRepo } from "./git.js";
+import { pull as gitPull, ensureRepo, preflightCheck } from "./git.js";
 import { log, withLock } from "./util.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -56,6 +61,7 @@ const mockImportSession = vi.mocked(importSession);
 const mockIsRemoteNewer = vi.mocked(isRemoteNewer);
 const mockGitPull = vi.mocked(gitPull);
 const mockEnsureRepo = vi.mocked(ensureRepo);
+const mockPreflightCheck = vi.mocked(preflightCheck);
 const mockReaddirSync = vi.mocked(readdirSync);
 const mockStatSync = vi.mocked(statSync);
 const mockLog = vi.mocked(log);
@@ -362,5 +368,23 @@ describe("pull.ts", () => {
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining("Локальных сессий: 1"),
     );
+  });
+
+  it("вызывает preflightCheck перед ensureRepo", async () => {
+    mockFsStructure({});
+    const callOrder: string[] = [];
+    mockPreflightCheck.mockImplementation(async () => { callOrder.push("preflight"); });
+    mockEnsureRepo.mockImplementation(() => { callOrder.push("ensureRepo"); });
+
+    await pullSessions();
+
+    expect(callOrder).toEqual(["preflight", "ensureRepo"]);
+  });
+
+  it("пробрасывает ошибку от preflightCheck", async () => {
+    mockPreflightCheck.mockRejectedValue(new Error("Нет подключения к интернету"));
+
+    await expect(pullSessions()).rejects.toThrow("Нет подключения к интернету");
+    expect(mockEnsureRepo).not.toHaveBeenCalled();
   });
 });

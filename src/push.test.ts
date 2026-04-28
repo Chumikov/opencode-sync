@@ -18,6 +18,11 @@ vi.mock("./session.js", () => ({
 vi.mock("./git.js", () => ({
   ensureRepo: vi.fn(),
   push: vi.fn(async () => {}),
+  preflightCheck: vi.fn(async () => {}),
+  PreflightError: class PreflightError extends Error {
+    hint: string;
+    constructor(m: string, h: string) { super(m); this.hint = h; }
+  },
 }));
 
 vi.mock("./util.js", () => ({
@@ -39,7 +44,7 @@ vi.mock("./manifest.js", () => ({
 
 import { loadConfig, sessionsDir } from "./config.js";
 import { listSessions, exportSessionAsync, saveSessionToFile, isLocalNewer, checkOpenCodeInstalled } from "./session.js";
-import { ensureRepo, push as gitPush } from "./git.js";
+import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
 import { log, promisePool, withLockAsync } from "./util.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -50,6 +55,7 @@ const mockSaveSession = vi.mocked(saveSessionToFile);
 const mockIsLocalNewer = vi.mocked(isLocalNewer);
 const mockEnsureRepo = vi.mocked(ensureRepo);
 const mockGitPush = vi.mocked(gitPush);
+const mockPreflightCheck = vi.mocked(preflightCheck);
 const mockLog = vi.mocked(log);
 const mockPromisePool = vi.mocked(promisePool);
 const mockWithLockAsync = vi.mocked(withLockAsync);
@@ -212,5 +218,23 @@ describe("push.ts", () => {
     await pushSessions();
 
     expect(mockPromisePool).toHaveBeenCalled();
+  });
+
+  it("вызывает preflightCheck перед ensureRepo", async () => {
+    mockListSessions.mockReturnValue([]);
+    const callOrder: string[] = [];
+    mockPreflightCheck.mockImplementation(async () => { callOrder.push("preflight"); });
+    mockEnsureRepo.mockImplementation(() => { callOrder.push("ensureRepo"); });
+
+    await pushSessions();
+
+    expect(callOrder).toEqual(["preflight", "ensureRepo"]);
+  });
+
+  it("пробрасывает PreflightError от preflightCheck", async () => {
+    mockPreflightCheck.mockRejectedValue(new Error("Нет подключения к интернету"));
+
+    await expect(pushSessions()).rejects.toThrow("Нет подключения к интернету");
+    expect(mockEnsureRepo).not.toHaveBeenCalled();
   });
 });

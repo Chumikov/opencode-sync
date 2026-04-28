@@ -11,7 +11,7 @@ import {
   type PullResult,
   type SessionInfo,
 } from "./session.js";
-import { pull as gitPull, ensureRepo } from "./git.js";
+import { pull as gitPull, ensureRepo, preflightCheck } from "./git.js";
 import { log, withLock } from "./util.js";
 import { getGlobalSessionSet } from "./manifest.js";
 
@@ -53,6 +53,7 @@ export async function pullSessions(options?: {
   const config = loadConfig();
   const result: PullResult = { imported: 0, updated: 0, skipped: 0, errors: 0, deleted: 0 };
 
+  await preflightCheck(config);
   ensureRepo(config.repo, config.localPath, config.branch);
 
   console.log("Pull: загрузка изменений из remote...");

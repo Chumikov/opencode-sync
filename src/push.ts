@@ -10,7 +10,7 @@ import {
   type PushResult,
   type SessionInfo,
 } from "./session.js";
-import { ensureRepo, push as gitPush } from "./git.js";
+import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
 import { log, promisePool, EXPORT_CONCURRENCY, withLockAsync } from "./util.js";
 import { writeManifest, getGlobalSessionSet, findOrphanFiles } from "./manifest.js";
 
@@ -27,6 +27,7 @@ export async function pushSessions(options?: {
   const config = loadConfig();
   const result: PushResult = { exported: 0, skipped: 0, errors: 0 };
 
+  await preflightCheck(config);
   ensureRepo(config.repo, config.localPath, config.branch);
 
   const sessions = options?.sessions ?? listSessions();

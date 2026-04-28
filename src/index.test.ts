@@ -43,6 +43,12 @@ vi.mock("./git.js", () => ({
   pull: vi.fn(() => true),
   push: vi.fn(),
   maskUrl: vi.fn((u: string) => u),
+  checkRepoAccess: vi.fn(() => ({ ok: true })),
+  preflightCheck: vi.fn(async () => {}),
+  PreflightError: class PreflightError extends Error {
+    hint: string;
+    constructor(m: string, h: string) { super(m); this.hint = h; }
+  },
 }));
 
 vi.mock("./session.js", () => ({
@@ -215,6 +221,36 @@ describe("index.ts CLI", () => {
 
       logSpy.mockRestore();
       errorSpy.mockRestore();
+    });
+
+    it("показывает Remote доступ: ok при успешной проверке", async () => {
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await runCommand(["status"]);
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Remote доступ:  ok"),
+      );
+
+      logSpy.mockRestore();
+    });
+
+    it("показывает ошибку доступа при неудачной проверке", async () => {
+      const { checkRepoAccess } = await import("./git.js");
+      vi.mocked(checkRepoAccess).mockReturnValue({
+        ok: false,
+        error: "Нет SSH-доступа",
+        hint: "ssh -T git@github.com",
+      });
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await runCommand(["status"]);
+
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Нет SSH-доступа"),
+      );
+
+      logSpy.mockRestore();
     });
   });
 });
