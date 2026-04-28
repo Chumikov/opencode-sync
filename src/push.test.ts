@@ -12,6 +12,7 @@ vi.mock("./session.js", () => ({
   exportSessionAsync: vi.fn(),
   saveSessionToFile: vi.fn(),
   isLocalNewer: vi.fn(),
+  checkOpenCodeInstalled: vi.fn(() => true),
 }));
 
 vi.mock("./git.js", () => ({
@@ -37,7 +38,7 @@ vi.mock("./manifest.js", () => ({
 }));
 
 import { loadConfig, sessionsDir } from "./config.js";
-import { listSessions, exportSessionAsync, saveSessionToFile, isLocalNewer } from "./session.js";
+import { listSessions, exportSessionAsync, saveSessionToFile, isLocalNewer, checkOpenCodeInstalled } from "./session.js";
 import { ensureRepo, push as gitPush } from "./git.js";
 import { log, promisePool, withLockAsync } from "./util.js";
 

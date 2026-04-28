@@ -6,6 +6,7 @@ import {
   exportSessionAsync,
   saveSessionToFile,
   isLocalNewer,
+  checkOpenCodeInstalled,
   type PushResult,
   type SessionInfo,
 } from "./session.js";
@@ -17,6 +18,12 @@ export async function pushSessions(options?: {
   dryRun?: boolean;
   sessions?: SessionInfo[];
 }): Promise<PushResult> {
+  if (!checkOpenCodeInstalled()) {
+    throw new Error(
+      "opencode не найден. Установите opencode: https://opencode.ai",
+    );
+  }
+
   const config = loadConfig();
   const result: PushResult = { exported: 0, skipped: 0, errors: 0 };
 

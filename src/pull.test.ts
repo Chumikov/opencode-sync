@@ -22,6 +22,8 @@ vi.mock("./session.js", () => ({
   readSessionFromFile: vi.fn(),
   importSession: vi.fn(),
   isRemoteNewer: vi.fn(),
+  deleteSession: vi.fn(),
+  checkOpenCodeInstalled: vi.fn(() => true),
 }));
 
 vi.mock("./git.js", () => ({
@@ -38,16 +40,11 @@ vi.mock("./manifest.js", () => ({
   getGlobalSessionSet: vi.fn(() => new Set()),
 }));
 
-vi.mock("better-sqlite3", () => ({
-  default: vi.fn(() => ({
-    prepare: vi.fn(() => ({ run: vi.fn() })),
-    close: vi.fn(),
-  })),
-}));
+
 
 import { readdirSync, statSync } from "node:fs";
 import { loadConfig, sessionsDir } from "./config.js";
-import { getSessionMap, readSessionFromFile, importSession, isRemoteNewer } from "./session.js";
+import { getSessionMap, readSessionFromFile, importSession, isRemoteNewer, deleteSession, checkOpenCodeInstalled } from "./session.js";
 import { pull as gitPull, ensureRepo } from "./git.js";
 import { log, withLock } from "./util.js";
 

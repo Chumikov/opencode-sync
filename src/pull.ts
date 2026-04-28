@@ -1,19 +1,19 @@
 import { readdirSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
-import { homedir } from "node:os";
 import { loadConfig, sessionsDir } from "./config.js";
 import {
   getSessionMap,
   readSessionFromFile,
   importSession,
   isRemoteNewer,
+  deleteSession,
+  checkOpenCodeInstalled,
   type PullResult,
   type SessionInfo,
 } from "./session.js";
 import { pull as gitPull, ensureRepo } from "./git.js";
 import { log, withLock } from "./util.js";
 import { getGlobalSessionSet } from "./manifest.js";
-import Database from "better-sqlite3";
 
 function findJsonFiles(dir: string): string[] {
   const results: string[] = [];
@@ -40,33 +40,16 @@ function findJsonFiles(dir: string): string[] {
   return results;
 }
 
-function deleteSessionFromDb(sessionId: string): boolean {
-  try {
-    const dbPath = process.env.OPENCODE_DB || join(
-      process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
-      "opencode",
-      "opencode.db",
-    );
-
-    if (!statSync(dbPath, { throwIfNoEntry: false })) return false;
-
-    const db = new Database(dbPath);
-    try {
-      db.prepare("DELETE FROM session WHERE id = ?").run(sessionId);
-      return true;
-    } finally {
-      db.close();
-    }
-  } catch (err: any) {
-    log(`[pull] Не удалось удалить сессию ${sessionId}: ${err.message}`);
-    return false;
-  }
-}
-
 export async function pullSessions(options?: {
   dryRun?: boolean;
   localMap?: Map<string, SessionInfo>;
 }): Promise<PullResult> {
+  if (!checkOpenCodeInstalled()) {
+    throw new Error(
+      "opencode не найден. Установите opencode: https://opencode.ai",
+    );
+  }
+
   const config = loadConfig();
   const result: PullResult = { imported: 0, updated: 0, skipped: 0, errors: 0, deleted: 0 };
 
@@ -146,7 +129,7 @@ export async function pullSessions(options?: {
       if (!globalAlive.has(localId)) {
         const sessionInfo = localMap.get(localId)!;
         log(`  🗑 ${sessionInfo.title || localId} (удалено на другом устройстве)`);
-        if (deleteSessionFromDb(localId)) {
+        if (deleteSession(localId)) {
           result.deleted++;
         } else {
           result.errors++;

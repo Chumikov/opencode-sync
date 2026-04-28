@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { saveConfig, DEFAULT_LOCAL_PATH, CONFIG_FILE_PATH } from "./config.js";
 import { clone, maskUrl, listBranches, isGitRepo } from "./git.js";
 import { installShellFunction } from "./shell.js";
+import { checkOpenCodeInstalled } from "./session.js";
 class SetupCancelledError extends Error {
   constructor() {
     super("Настройка отменена");
@@ -30,6 +31,11 @@ const SETUP_INFO = `Для синхронизации нужен приватн�
 Создайте репозиторий на GitHub, затем укажите его URL.`;
 
 export async function runSetup(): Promise<void> {
+  if (!checkOpenCodeInstalled()) {
+    clack.outro("opencode не найден. Установите opencode: https://opencode.ai");
+    throw new SetupFailedError("opencode не найден");
+  }
+
   if (existsSync(CONFIG_FILE_PATH)) {
     const shouldReconfigure = await clack.confirm({
       message: "Конфигурация уже существует. Перенастроить?",

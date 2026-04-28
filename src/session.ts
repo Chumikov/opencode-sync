@@ -14,6 +14,16 @@ function getOpenCodeDbPath(): string {
   if (process.env.OPENCODE_DB) {
     return process.env.OPENCODE_DB;
   }
+  try {
+    const result = execFileSync(OPENCODE_BIN, ["db", "path"], {
+      encoding: "utf-8",
+      timeout: OPENCODE_TIMEOUT_MS,
+      maxBuffer: OPENCODE_MAX_BUFFER,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const path = result.trim();
+    if (path) return path;
+  } catch {}
   return join(
     process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
     "opencode",
@@ -227,4 +237,28 @@ export function isRemoteNewer(
   if (!localSession) return true;
 
   return fileData.info.time.updated > localSession.updated;
+}
+
+export function deleteSession(sessionId: string): boolean {
+  try {
+    runOpenCode(["session", "delete", sessionId]);
+    return true;
+  } catch (err: any) {
+    log(`[session] Не удалось удалить сессию ${sessionId}: ${err.message}`);
+    return false;
+  }
+}
+
+export function checkOpenCodeInstalled(): string {
+  const bin = process.env.OPENCODE_BIN || "opencode";
+  try {
+    execFileSync(bin, ["--version"], {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return bin;
+  } catch {
+    return "";
+  }
 }
