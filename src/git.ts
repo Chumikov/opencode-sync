@@ -151,6 +151,71 @@ export function getDefaultBranch(localPath: string): string | null {
   }
 }
 
+export interface RepoAccessResult {
+  ok: true;
+}
+
+export interface RepoAccessError {
+  ok: false;
+  error: string;
+  hint: string;
+}
+
+export type CheckRepoAccessResult = RepoAccessResult | RepoAccessError;
+
+function parseAccessError(stderr: string): { error: string; hint: string } {
+  const lower = stderr.toLowerCase();
+
+  if (lower.includes("permission denied") || lower.includes("publickey")) {
+    return {
+      error: "Нет SSH-доступа к репозиторию",
+      hint: `Проверьте что SSH-ключ добавлен в аккаунт:\n  ssh -T git@github.com\n\nЕсли ключ не добавлен, сгенерируйте и добавьте:\n  ssh-keygen -t ed25519\n  cat ~/.ssh/id_ed25519.pub  → скопируйте в GitHub Settings → SSH keys`,
+    };
+  }
+
+  if (lower.includes("not found") || lower.includes("does not exist") || lower.includes("couldn't find")) {
+    return {
+      error: "Репозиторий не найден",
+      hint: `Возможные причины:\n  1. Опечатка в URL — проверьте название репозитория\n  2. Репозиторий не существует — создайте его на GitHub\n  3. Нет прав на чтение — запросите доступ у владельца`,
+    };
+  }
+
+  if (lower.includes("could not read username") || lower.includes("authentication failed") || lower.includes("fatal: could not read") || lower.includes("access denied")) {
+    return {
+      error: "Ошибка аутентификации",
+      hint: `Для HTTPS-URL используйте personal access token:\n  https://<token>@github.com/user/repo.git\n\nТокен можно создать: GitHub → Settings → Developer settings → Personal access tokens\n\nИли переключитесь на SSH:\n  git@github.com:user/repo.git`,
+    };
+  }
+
+  if (lower.includes("timed out") || lower.includes("could not resolve") || lower.includes("connection refused") || lower.includes("network is unreachable")) {
+    return {
+      error: "Не удалось подключиться к серверу",
+      hint: `Проверьте:\n  1. Интернет-соединение: ping github.com\n  2. Доступность хоста (возможно, блокируется firewall/VPN)\n  3. Правильность URL`,
+    };
+  }
+
+  return {
+    error: maskUrl(stderr),
+    hint: `Проверьте:\n  1. Правильность URL репозитория\n  2. Наличие SSH-ключа или HTTPS-токена\n  3. Права доступа к репозиторию`,
+  };
+}
+
+export function checkRepoAccess(repoUrl: string): CheckRepoAccessResult {
+  try {
+    execFileSync(GIT_BIN, ["ls-remote", repoUrl, "HEAD"], {
+      encoding: "utf-8",
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return { ok: true };
+  } catch (err: any) {
+    const stderr = err.stderr?.toString()?.trim() || err.message || "";
+    const parsed = parseAccessError(stderr);
+    return { ok: false, error: parsed.error, hint: parsed.hint };
+  }
+}
+
 export function maskUrl(url: string): string {
   try {
     if (url.startsWith("git@")) {

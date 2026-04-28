@@ -9,6 +9,7 @@ import {
   push,
   listBranches,
   getDefaultBranch,
+  checkRepoAccess,
 } from "./git.js";
 
 vi.mock("node:child_process", () => ({
@@ -375,6 +376,147 @@ describe("git.ts", () => {
       const branch = getDefaultBranch("/tmp/repo");
 
       expect(branch).toBeNull();
+    });
+  });
+
+  describe("checkRepoAccess", () => {
+    it("возвращает ok:true при успешной проверке", () => {
+      mockGit.mockReturnValue("abc123def456\tHEAD\n");
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result).toEqual({ ok: true });
+      expect(mockGit).toHaveBeenCalledWith(
+        expect.any(String),
+        ["ls-remote", "git@github.com:user/repo.git", "HEAD"],
+        expect.objectContaining({ timeout: 10_000 }),
+      );
+    });
+
+    it("распознаёт SSH Permission denied", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "Permission denied (publickey).",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Нет SSH-доступа к репозиторию");
+        expect(result.hint).toContain("ssh -T git@github.com");
+        expect(result.hint).toContain("ssh-keygen");
+      }
+    });
+
+    it("распознаёт Repository not found", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "ERROR: Repository not found.",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Репозиторий не найден");
+        expect(result.hint).toContain("Опечатка в URL");
+      }
+    });
+
+    it("распознаёт could not read Username", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "fatal: could not read Username for 'https://github.com'",
+        });
+      });
+
+      const result = checkRepoAccess("https://github.com/user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Ошибка аутентификации");
+        expect(result.hint).toContain("personal access token");
+      }
+    });
+
+    it("распознаёт Authentication failed", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "fatal: Authentication failed",
+        });
+      });
+
+      const result = checkRepoAccess("https://github.com/user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Ошибка аутентификации");
+        expect(result.hint).toContain("SSH");
+      }
+    });
+
+    it("распознаёт Connection timed out", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "fatal: Connection timed out",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Не удалось подключиться к серверу");
+        expect(result.hint).toContain("Интернет");
+      }
+    });
+
+    it("распознаёт Could not resolve", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "fatal: Could not resolve hostname github.com",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe("Не удалось подключиться к серверу");
+      }
+    });
+
+    it("возвращает fallback для неизвестной ошибки", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "fatal: some unknown error",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.hint).toContain("URL");
+      }
+    });
+
+    it("маскирует URL в fallback-ошибке", () => {
+      mockGit.mockImplementation(() => {
+        throw Object.assign(new Error("fatal"), {
+          stderr: "git@github.com:user/secret-repo.git fatal error",
+        });
+      });
+
+      const result = checkRepoAccess("git@github.com:user/secret-repo.git");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).not.toContain("secret-repo");
+      }
     });
   });
 });

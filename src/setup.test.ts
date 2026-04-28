@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => '{"version": "1.0.0"}'),
@@ -24,6 +24,7 @@ vi.mock("./git.js", () => ({
   maskUrl: vi.fn((u: string) => u),
   listBranches: vi.fn(() => []),
   isGitRepo: vi.fn(() => false),
+  checkRepoAccess: vi.fn(() => ({ ok: true })),
 }));
 
 vi.mock("./shell.js", () => ({
@@ -38,13 +39,17 @@ vi.mock("./util.js", () => ({
   log: vi.fn(),
 }));
 
+vi.mock("./session.js", () => ({
+  checkOpenCodeInstalled: vi.fn(() => "opencode"),
+}));
+
 vi.mock("@clack/prompts", () => ({
   text: vi.fn(),
   confirm: vi.fn(),
   select: vi.fn(),
   cancel: vi.fn(),
   note: vi.fn(),
-  log: { success: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  log: { success: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   outro: vi.fn(),
   spinner: vi.fn(() => ({
     start: vi.fn(),
@@ -56,14 +61,24 @@ vi.mock("@clack/prompts", () => ({
 
 import { runSetup, SetupCancelledError, SetupFailedError } from "./setup.js";
 import { saveConfig } from "./config.js";
-import { clone, listBranches, isGitRepo, maskUrl } from "./git.js";
+import { clone, listBranches, isGitRepo, maskUrl, checkRepoAccess } from "./git.js";
 import { installShellFunction } from "./shell.js";
 import * as clack from "@clack/prompts";
 import { existsSync } from "node:fs";
 
 describe("setup.ts", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    vi.mocked(checkRepoAccess).mockReturnValue({ ok: true });
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clone).mockImplementation(() => {});
+    vi.mocked(installShellFunction).mockReturnValue({
+      installed: true,
+      rcFile: "/home/testuser/.zshrc",
+      shellName: "zsh",
+    });
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.isCancel).mockReturnValue(false);
   });
 
   async function setupMocks(overrides: {
@@ -75,13 +90,23 @@ describe("setup.ts", () => {
     branches?: string[];
     selectBranch?: string | symbol;
     shellInstalled?: boolean;
+    accessResult?: { ok: true } | { ok: false; error: string; hint: string };
   }) {
     vi.mocked(existsSync).mockReturnValue(overrides.configExists ?? false);
     vi.mocked(clack.confirm).mockResolvedValue(overrides.confirmResult ?? false);
-    vi.mocked(clack.text)
-      .mockResolvedValueOnce(overrides.repoUrl ?? "git@github.com:user/sessions.git")
-      .mockResolvedValueOnce(overrides.deviceName ?? "test-device");
+
+    const url = overrides.repoUrl ?? "git@github.com:user/sessions.git";
+    const device = overrides.deviceName ?? "test-device";
+    let textCallIdx = 0;
+    const textResponses = [url, device];
+    vi.mocked(clack.text).mockImplementation(() => {
+      return Promise.resolve(textResponses[textCallIdx++]);
+    });
     vi.mocked(clack.isCancel).mockReturnValue(false);
+
+    if (overrides.accessResult) {
+      vi.mocked(checkRepoAccess).mockReturnValue(overrides.accessResult);
+    }
 
     if (overrides.cloneError) {
       vi.mocked(clone).mockImplementation(() => {
@@ -112,6 +137,7 @@ describe("setup.ts", () => {
 
     await runSetup();
 
+    expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/sessions.git");
     expect(clone).toHaveBeenCalledWith(
       "git@github.com:user/sessions.git",
       expect.any(String),
@@ -164,6 +190,117 @@ describe("setup.ts", () => {
     expect(clack.cancel).toHaveBeenCalled();
   });
 
+  it("показывает ошибку и hint при отсутствии доступа", async () => {
+    await setupMocks({
+      accessResult: {
+        ok: false,
+        error: "Нет SSH-доступа",
+        hint: "ssh -T git@github.com",
+      },
+    });
+
+    vi.mocked(clack.select).mockResolvedValue("cancel");
+
+    await expect(runSetup()).rejects.toThrow(SetupCancelledError);
+    expect(clack.log.error).toHaveBeenCalledWith("Нет SSH-доступа");
+    expect(clack.note).toHaveBeenCalledWith("ssh -T git@github.com", "Как исправить");
+  });
+
+  it("повторяет проверку при выборе retry", async () => {
+    vi.mocked(checkRepoAccess)
+      .mockReturnValueOnce({ ok: false, error: "Нет доступа", hint: "Проверьте SSH" })
+      .mockReturnValue({ ok: true });
+
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clone).mockImplementation(() => {});
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+    vi.mocked(clack.select).mockResolvedValueOnce("retry");
+
+    await runSetup();
+
+    expect(checkRepoAccess).toHaveBeenCalledTimes(2);
+    expect(clone).toHaveBeenCalled();
+    expect(saveConfig).toHaveBeenCalled();
+  });
+
+  it("позволяет изменить URL и повторить", async () => {
+    vi.mocked(checkRepoAccess)
+      .mockReturnValueOnce({ ok: false, error: "Нет доступа", hint: "Проверьте" })
+      .mockReturnValue({ ok: true });
+
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clone).mockImplementation(() => {});
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/old.git")
+      .mockResolvedValueOnce("git@github.com:user/new.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.select).mockResolvedValueOnce("change");
+
+    await runSetup();
+
+    expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/old.git");
+    expect(checkRepoAccess).toHaveBeenCalledWith("git@github.com:user/new.git");
+    expect(saveConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: "git@github.com:user/new.git" }),
+    );
+  });
+
+  it("выходит при отмене из меню ошибки доступа", async () => {
+    await setupMocks({
+      accessResult: {
+        ok: false,
+        error: "Нет доступа",
+        hint: "Проверьте",
+      },
+    });
+
+    vi.mocked(clack.select).mockResolvedValue("cancel");
+
+    await expect(runSetup()).rejects.toThrow(SetupCancelledError);
+    expect(saveConfig).not.toHaveBeenCalled();
+  });
+
+  it("выходит при cancel (clack.isCancel) из меню ошибки", async () => {
+    await setupMocks({
+      accessResult: {
+        ok: false,
+        error: "Нет доступа",
+        hint: "Проверьте",
+      },
+    });
+
+    let cancelCount = 0;
+    vi.mocked(clack.isCancel).mockImplementation(() => ++cancelCount >= 2);
+    vi.mocked(clack.select).mockResolvedValue("retry");
+
+    await expect(runSetup()).rejects.toThrow(SetupCancelledError);
+  });
+
+  it("выходит при cancel при вводе нового URL", async () => {
+    vi.mocked(checkRepoAccess).mockReturnValue({
+      ok: false,
+      error: "Нет доступа",
+      hint: "Проверьте",
+    });
+
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce(Symbol("cancel"));
+    let cancelCount = 0;
+    vi.mocked(clack.isCancel).mockImplementation((val: any) => {
+      cancelCount++;
+      return typeof val === "symbol" || cancelCount >= 3;
+    });
+    vi.mocked(clack.select).mockResolvedValue("change");
+
+    await expect(runSetup()).rejects.toThrow(SetupCancelledError);
+  });
+
   it("выбирает ветку при нескольких ветках", async () => {
     await setupMocks({
       cloneError: true,
@@ -213,19 +350,6 @@ describe("setup.ts", () => {
     await runSetup();
 
     expect(clack.log.warn).toHaveBeenCalled();
-  });
-
-  it("валидация URL reject пустой ввод", async () => {
-    vi.mocked(existsSync).mockReturnValue(false);
-    vi.mocked(clack.text)
-      .mockResolvedValueOnce("")
-      .mockResolvedValueOnce("test-device");
-    const validateFn = vi.mocked(clack.text).mock.calls[0];
-    
-    const textOptions = vi.mocked(clack.text).mock.calls[0] as any[];
-    const validate = (await import("./setup.js")).runSetup;
-
-    expect(typeof textOptions).toBeDefined();
   });
 
   it("SetupCancelledError имеет правильное имя", () => {

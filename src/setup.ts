@@ -2,7 +2,7 @@ import * as clack from "@clack/prompts";
 import { existsSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { saveConfig, DEFAULT_LOCAL_PATH, CONFIG_FILE_PATH } from "./config.js";
-import { clone, maskUrl, listBranches, isGitRepo } from "./git.js";
+import { clone, maskUrl, listBranches, isGitRepo, checkRepoAccess } from "./git.js";
 import { installShellFunction } from "./shell.js";
 import { checkOpenCodeInstalled } from "./session.js";
 class SetupCancelledError extends Error {
@@ -50,7 +50,7 @@ export async function runSetup(): Promise<void> {
 
   clack.note(SETUP_INFO, "Git-репозиторий");
 
-  const repoUrl = await clack.text({
+  let repoUrl = await clack.text({
     message: "URL git-репозитория (SSH или HTTPS)",
     placeholder: "git@github.com:user/sessions.git",
     validate: (value) => {
@@ -70,6 +70,62 @@ export async function runSetup(): Promise<void> {
   if (clack.isCancel(repoUrl)) {
     clack.cancel("Настройка отменена");
     throw new SetupCancelledError();
+  }
+
+  while (true) {
+    const s = clack.spinner();
+    s.start("Проверяю доступ к репозиторию...");
+
+    const access = checkRepoAccess(String(repoUrl));
+
+    if (access.ok) {
+      s.stop("Доступ подтверждён");
+      break;
+    }
+
+    s.stop();
+    clack.log.error(access.error);
+    clack.note(access.hint, "Как исправить");
+
+    const choice = await clack.select({
+      message: "Что делать дальше?",
+      options: [
+        { value: "retry", label: "Повторить проверку" },
+        { value: "change", label: "Изменить URL" },
+        { value: "cancel", label: "Отмена" },
+      ],
+    });
+
+    if (clack.isCancel(choice) || choice === "cancel") {
+      clack.cancel("Настройка отменена");
+      throw new SetupCancelledError();
+    }
+
+    if (choice === "change") {
+      const newUrl = await clack.text({
+        message: "URL git-репозитория (SSH или HTTPS)",
+        placeholder: "git@github.com:user/sessions.git",
+        validate: (value) => {
+          const v = value ?? "";
+          if (!v.trim()) return "Укажите URL репозитория";
+          if (
+            !v.startsWith("git@") &&
+            !v.startsWith("https://") &&
+            !v.startsWith("http://") &&
+            !v.startsWith("ssh://")
+          ) {
+            return "URL должен начинаться с git@, https://, http:// или ssh://";
+          }
+        },
+      });
+
+      if (clack.isCancel(newUrl)) {
+        clack.cancel("Настройка отменена");
+        throw new SetupCancelledError();
+      }
+
+      repoUrl = newUrl;
+    }
   }
 
   const deviceName = await clack.text({
