@@ -360,6 +360,86 @@ describe("setup.ts", () => {
     expect(maskUrl).toHaveBeenCalled();
   });
 
+  it("клонирует пустой репозиторий через cloneAll", async () => {
+    let cloneCallCount = 0;
+    vi.mocked(clone).mockImplementation(() => {
+      cloneCallCount++;
+      if (cloneCallCount === 1) throw new Error("clone failed");
+    });
+    vi.mocked(cloneAll).mockImplementation(() => {});
+    vi.mocked(isGitRepo).mockReturnValue(false);
+    vi.mocked(listRemoteBranches).mockReturnValue([]);
+    vi.mocked(listBranches).mockReturnValue(["main"]);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+
+    await runSetup();
+
+    expect(cloneAll).toHaveBeenCalledWith("git@github.com:user/sessions.git", expect.any(String));
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ branch: "main" }));
+  });
+
+  it("автоматически выбирает master при нескольких ветках", async () => {
+    let cloneCallCount = 0;
+    vi.mocked(clone).mockImplementation(() => {
+      cloneCallCount++;
+      if (cloneCallCount === 1) throw new Error("clone failed");
+    });
+    vi.mocked(isGitRepo).mockReturnValue(false);
+    vi.mocked(listRemoteBranches).mockReturnValue(["master", "develop"]);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+
+    await runSetup();
+
+    expect(saveConfig).toHaveBeenCalledWith(expect.objectContaining({ branch: "master" }));
+  });
+
+  it("выходит при отмене выбора ветки", async () => {
+    let cloneCallCount = 0;
+    vi.mocked(clone).mockImplementation(() => {
+      cloneCallCount++;
+      if (cloneCallCount === 1) throw new Error("clone failed");
+    });
+    vi.mocked(isGitRepo).mockReturnValue(false);
+    vi.mocked(listRemoteBranches).mockReturnValue(["main", "develop"]);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    let cancelCount = 0;
+    vi.mocked(clack.isCancel).mockImplementation(() => ++cancelCount >= 2);
+    vi.mocked(clack.select).mockResolvedValue(Symbol("cancel"));
+
+    await expect(runSetup()).rejects.toThrow(SetupCancelledError);
+  });
+
+  it("выходит если клонирование с выбранной веткой не удалось", async () => {
+    vi.mocked(clone).mockImplementation(() => {
+      throw new Error("clone failed");
+    });
+    vi.mocked(isGitRepo).mockReturnValue(false);
+    vi.mocked(listRemoteBranches).mockReturnValue(["master", "develop"]);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
+
+    await expect(runSetup()).rejects.toThrow(SetupFailedError);
+    expect(maskUrl).toHaveBeenCalled();
+  });
+
   it("предупреждает если shell не поддерживается", async () => {
     await setupMocks({ shellInstalled: false });
 

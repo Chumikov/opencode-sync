@@ -59,14 +59,20 @@ function getOpenCodeBin(): string {
   return process.env.OPENCODE_BIN || "opencode";
 }
 
-const IS_WIN = process.platform === "win32";
-
-function openCodeExecArgs(args: string[]): { cmd: string; cmdArgs: string[] } {
-  const bin = getOpenCodeBin();
-  if (IS_WIN && !process.env.OPENCODE_BIN) {
+export function _openCodeExecArgs(
+  args: string[],
+  platform: string,
+  envBin?: string,
+): { cmd: string; cmdArgs: string[] } {
+  const bin = envBin || "opencode";
+  if (platform === "win32" && !envBin) {
     return { cmd: "cmd", cmdArgs: ["/c", bin, ...args] };
   }
   return { cmd: bin, cmdArgs: args };
+}
+
+function openCodeExecArgs(args: string[]): { cmd: string; cmdArgs: string[] } {
+  return _openCodeExecArgs(args, process.platform, process.env.OPENCODE_BIN);
 }
 
 function runOpenCode(args: string[]): string {

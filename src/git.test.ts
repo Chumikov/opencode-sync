@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkRepoAccess,
   clone,
+  cloneAll,
   commit,
   ensureRepo,
   getDefaultBranch,
   isGitRepo,
   listBranches,
+  listRemoteBranches,
   maskUrl,
   PreflightError,
   preflightCheck,
@@ -103,6 +105,39 @@ describe("git.ts", () => {
       });
 
       expect(() => clone("git@github.com:no/repo.git", "/tmp/x", "main")).toThrow();
+    });
+  });
+
+  describe("cloneAll", () => {
+    it("клонирует без --single-branch", () => {
+      mockGit.mockReturnValue("");
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      cloneAll("git@github.com:user/repo.git", "/tmp/clone");
+
+      expect(mockGit).toHaveBeenCalledWith(
+        expect.any(String),
+        ["clone", "git@github.com:user/repo.git", "/tmp/clone"],
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe("listRemoteBranches", () => {
+    it("парсит ветки из ls-remote", () => {
+      mockGit.mockReturnValue("a1b2c3d4\trefs/heads/main\ne5f6a7b8\trefs/heads/develop\n");
+
+      const branches = listRemoteBranches("git@github.com:user/repo.git");
+
+      expect(branches).toEqual(["main", "develop"]);
+    });
+
+    it("возвращает пустой массив при ошибке", () => {
+      mockGit.mockImplementation(() => {
+        throw new Error("failed");
+      });
+
+      expect(listRemoteBranches("git@github.com:user/repo.git")).toEqual([]);
     });
   });
 

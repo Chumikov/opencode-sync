@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import {
+  _openCodeExecArgs,
   checkOpenCodeInstalled,
   deleteSession,
   exportSession,
@@ -459,6 +460,28 @@ describe("session.ts", () => {
       mockReadFileSync.mockReturnValue(JSON.stringify(fileData));
 
       expect(isLocalNewer(local, "/tmp/sync/sessions/p1/s1.json")).toBe(true);
+    });
+  });
+
+  describe("_openCodeExecArgs", () => {
+    it("возвращает cmd /c на Windows без OPENCODE_BIN", () => {
+      const result = _openCodeExecArgs(["list"], "win32");
+      expect(result).toEqual({ cmd: "cmd", cmdArgs: ["/c", "opencode", "list"] });
+    });
+
+    it("вызывает бинаррь напрямую на Windows с OPENCODE_BIN", () => {
+      const result = _openCodeExecArgs(["list"], "win32", "/usr/local/bin/opencode");
+      expect(result).toEqual({ cmd: "/usr/local/bin/opencode", cmdArgs: ["list"] });
+    });
+
+    it("вызывает бинаррь напрямую на Linux без OPENCODE_BIN", () => {
+      const result = _openCodeExecArgs(["list"], "linux");
+      expect(result).toEqual({ cmd: "opencode", cmdArgs: ["list"] });
+    });
+
+    it("вызывает бинаррь напрямую на macOS с OPENCODE_BIN", () => {
+      const result = _openCodeExecArgs(["list"], "darwin", "/opt/bin/opencode");
+      expect(result).toEqual({ cmd: "/opt/bin/opencode", cmdArgs: ["list"] });
     });
   });
 });
