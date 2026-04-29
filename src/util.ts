@@ -113,7 +113,7 @@ export async function withRetry<T>(
       lastError = err;
       if (attempt < retries) {
         log(`[retry] Попытка ${attempt}/${retries} не удалась: ${err.message}`);
-        await new Promise((r) => setTimeout(r, delayMs * attempt));
+        await new Promise((r) => setTimeout(r, delayMs * 2 ** (attempt - 1)));
       }
     }
   }

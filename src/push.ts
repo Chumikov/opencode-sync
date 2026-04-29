@@ -26,28 +26,30 @@ export async function pushSessions(options?: { dryRun?: boolean; sessions?: Sess
   ensureRepo(config.repo, config.localPath, config.branch);
 
   const sessions = options?.sessions ?? listSessions();
-  const newCount = sessions.filter((s) => {
-    if (!s.id) return false;
-    const filePath = join(sessionsDir(config.localPath), s.projectId || "global", `${s.id}.json`);
-    return isLocalNewer(s, filePath);
-  }).length;
 
+  const freshnessMap = new Map<string, boolean>();
+  for (const s of sessions) {
+    if (!s.id) {
+      freshnessMap.set(s.id, false);
+      continue;
+    }
+    const filePath = join(sessionsDir(config.localPath), s.projectId || "global", `${s.id}.json`);
+    freshnessMap.set(s.id, isLocalNewer(s, filePath));
+  }
+
+  const newCount = [...freshnessMap.values()].filter(Boolean).length;
   console.log(`Push: ${sessions.length} сессий, ${newCount} новых/изменённых`);
 
   const toExport: SessionInfo[] = [];
 
   for (const session of sessions) {
-    const projectId = session.projectId || "global";
-    const sessionId = session.id;
-    const filePath = join(sessionsDir(config.localPath), projectId, `${sessionId}.json`);
-
-    if (!isLocalNewer(session, filePath) || !session.id) {
+    if (!session.id || !freshnessMap.get(session.id)) {
       result.skipped++;
       continue;
     }
 
     if (options?.dryRun) {
-      log(`  [dry-run] Экспорт: ${session.title} (${sessionId})`);
+      log(`  [dry-run] Экспорт: ${session.title} (${session.id})`);
       result.exported++;
       continue;
     }

@@ -43,7 +43,7 @@ function findJsonFiles(dir: string): string[] {
 export async function pullSessions(options?: {
   dryRun?: boolean;
   localMap?: Map<string, SessionInfo>;
-}): Promise<PullResult> {
+}): Promise<PullResult & { localMap?: Map<string, SessionInfo> }> {
   if (!checkOpenCodeInstalled()) {
     throw new Error("opencode не найден. Установите opencode: https://opencode.ai");
   }
@@ -149,5 +149,5 @@ export async function pullSessions(options?: {
 
   console.log(`Готово: ${parts.length > 0 ? parts.join(", ") : "нет изменений"}`);
 
-  return result;
+  return { ...result, localMap };
 }

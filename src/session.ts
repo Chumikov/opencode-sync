@@ -150,20 +150,6 @@ export function getSessionMap(): Map<string, SessionInfo> {
   return map;
 }
 
-export function exportSession(sessionId: string): SessionExport | null {
-  validateSessionId(sessionId);
-  try {
-    const stdout = runOpenCode(["export", sessionId]);
-    return JSON.parse(stdout) as SessionExport;
-  } catch (err: any) {
-    if (err.message.includes("JSON")) {
-      log(`  ⚠ ${sessionId}: битый JSON от opencode export, пропускаем`);
-      return null;
-    }
-    throw err;
-  }
-}
-
 export async function exportSessionAsync(sessionId: string): Promise<SessionExport | null> {
   validateSessionId(sessionId);
   try {
@@ -180,14 +166,11 @@ export async function exportSessionAsync(sessionId: string): Promise<SessionExpo
 
 export function saveSessionToFile(data: SessionExport, basePath: string): string {
   const sessionId = data.info.id;
-  const filePath = join(basePath, "sessions", "global", `${sessionId}.json`);
-  const overrideData: SessionExport = {
-    ...data,
-    info: { ...data.info, projectID: "global" },
-  };
+  const projectId = getProjectId(data);
+  const filePath = join(basePath, "sessions", projectId, `${sessionId}.json`);
 
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(overrideData, null, 2)}\n`, "utf-8");
+  writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 
   return filePath;
 }
@@ -239,6 +222,7 @@ export function isRemoteNewer(fileData: SessionExport, localMap: Map<string, Ses
 }
 
 export function deleteSession(sessionId: string): boolean {
+  validateSessionId(sessionId);
   try {
     runOpenCode(["session", "delete", sessionId]);
     return true;

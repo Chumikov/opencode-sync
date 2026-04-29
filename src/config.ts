@@ -71,20 +71,23 @@ export const SYNC_LOG_PATH = join(DEFAULT_LOCAL_PATH, "sync.log");
  * @throws Error если repo не указан ни в файле, ни через env
  */
 export function loadConfig(): SyncConfig {
-  // Сначала пробуем прочитать файл конфигурации
   let fileConfig: Partial<SyncConfig> = {};
   if (existsSync(CONFIG_FILE_PATH)) {
     try {
       const raw = readFileSync(CONFIG_FILE_PATH, "utf-8");
-      fileConfig = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        fileConfig = parsed;
+      } else {
+        console.warn(`[sync] Некорректная структура в ${CONFIG_FILE_PATH}, используем env-переменные`);
+      }
     } catch {
       console.warn(`[sync] Не удалось прочитать ${CONFIG_FILE_PATH}, используем env-переменные`);
     }
   }
 
-  // Склеиваем: env > файл > default
   const repo = process.env.OPENCODE_SYNC_REPO || fileConfig.repo;
-  if (!repo) {
+  if (!repo || typeof repo !== "string") {
     throw new Error(
       `Не указан git-репозиторий.\n  Установите OPENCODE_SYNC_REPO или добавьте "repo" в ${CONFIG_FILE_PATH}`,
     );
@@ -94,7 +97,7 @@ export function loadConfig(): SyncConfig {
 
   const localPath = resolve(process.env.OPENCODE_SYNC_PATH || fileConfig.localPath || DEFAULT_LOCAL_PATH);
 
-  const branch = fileConfig.branch || "main";
+  const branch = process.env.OPENCODE_SYNC_BRANCH || fileConfig.branch || "main";
 
   return { repo, deviceName, localPath, branch };
 }

@@ -5,7 +5,6 @@ import {
   _openCodeExecArgs,
   checkOpenCodeInstalled,
   deleteSession,
-  exportSession,
   exportSessionAsync,
   getOpenCodeVersion,
   getProjectId,
@@ -169,41 +168,6 @@ describe("session.ts", () => {
     });
   });
 
-  describe("exportSession", () => {
-    it("экспортирует сессию через opencode CLI", () => {
-      const exported = mockSessionExport();
-      mockExecFileSync.mockReturnValue(JSON.stringify(exported));
-
-      const result = exportSession("s1");
-
-      expect(result).not.toBeNull();
-      expect(result?.info.id).toBe("01JTEST00000000000000000001");
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        process.platform === "win32" ? "cmd" : expect.any(String),
-        process.platform === "win32" ? ["/c", "opencode", "export", "s1"] : ["export", "s1"],
-        expect.any(Object),
-      );
-    });
-
-    it("возвращает null при битом JSON", () => {
-      mockExecFileSync.mockReturnValue("NOT JSON {{{");
-
-      const result = exportSession("s1");
-
-      expect(result).toBeNull();
-    });
-
-    it("пробрасывает не-JSON ошибки", () => {
-      mockExecFileSync.mockImplementation(() => {
-        throw Object.assign(new Error("opencode export: command failed"), {
-          stderr: "command not found",
-        });
-      });
-
-      expect(() => exportSession("s1")).toThrow("command not found");
-    });
-  });
-
   describe("exportSessionAsync", () => {
     it("экспортирует сессию через async execFile", async () => {
       const exported = mockSessionExport();
@@ -237,19 +201,19 @@ describe("session.ts", () => {
   });
 
   describe("saveSessionToFile", () => {
-    it("сохраняет в sessions/global/{sessionId}.json с project_id = global", () => {
+    it("сохраняет в sessions/{projectId}/{sessionId}.json", () => {
       const data = mockSessionExport();
 
       const path = saveSessionToFile(data, "/tmp/sync");
 
-      expect(path).toBe(join("/tmp/sync", "sessions", "global", "01JTEST00000000000000000001.json"));
+      expect(path).toBe(join("/tmp/sync", "sessions", "abc123", "01JTEST00000000000000000001.json"));
       expect(mockMkdirSync).toHaveBeenCalledWith(expect.any(String), {
         recursive: true,
       });
       expect(mockWriteFileSync).toHaveBeenCalledWith(path, expect.any(String), "utf-8");
       const written = vi.mocked(mockWriteFileSync).mock.calls[0][1] as string;
       const parsed = JSON.parse(written);
-      expect(parsed.info.projectID).toBe("global");
+      expect(parsed.info.projectID).toBe("abc123");
     });
 
     it("сохраняет форматированный JSON", () => {

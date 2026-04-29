@@ -40,6 +40,7 @@ const helpText = `opencode-sync — Git-based синхронизация сес�
   OPENCODE_SYNC_REPO      URL git-репозитория
   OPENCODE_SYNC_DEVICE    Имя устройства
   OPENCODE_SYNC_PATH      Локальный путь к клону
+  OPENCODE_SYNC_BRANCH    Ветка в sync-репозитории
   OPENCODE_BIN            Путь к бинарнику opencode
 
 Chumikov Sec — https://t.me/chumikovsec`;
@@ -111,7 +112,7 @@ program
       console.log();
 
       console.log("[push]");
-      const sessions = listSessions();
+      const sessions = pullResult.localMap ? [...pullResult.localMap.values()] : listSessions();
       const pushResult = await pushSessions({
         dryRun: opts.dryRun,
         sessions,

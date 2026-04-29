@@ -29,7 +29,7 @@ const FISH_FUNCTION = `function opencode
 end`;
 
 const PS_FUNCTION = `function opencode {
-    $syncLog = "${SYNC_LOG_PATH.replace(/\\/g, "\\")}"
+    $syncLog = "${SYNC_LOG_PATH.replace(/\\/g, "/")}"
     New-Item -ItemType Directory -Force (Split-Path $syncLog) | Out-Null
     opencode-sync pull 2>>$syncLog
     if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка pull (подробности: $syncLog)" }
@@ -39,9 +39,6 @@ const PS_FUNCTION = `function opencode {
     if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка push (подробности: $syncLog)" }
     return $exit_code
 }`;
-
-const PS_BLOCK_START = "# >>> opencode-sync >>>";
-const PS_BLOCK_END = "# <<< opencode-sync <<<";
 
 export type ShellType = "bash" | "zsh" | "fish" | "powershell";
 
@@ -93,7 +90,7 @@ function detectPowerShell(): ShellInfo | null {
     return { rcFile: winPsProfile, shellName: "powershell" };
   }
 
-  if (process.env.PSModulePath || process.env.PSModulePath === "") {
+  if (process.env.PSModulePath !== undefined) {
     return { rcFile: pwshProfile, shellName: "powershell" };
   }
 
@@ -113,7 +110,7 @@ export function getShellInfo(): ShellInfo | null {
 function isBlockInstalled(rcFile: string): boolean {
   if (!existsSync(rcFile)) return false;
   const content = readFileSync(rcFile, "utf-8");
-  return content.includes(SHELL_FUNCTION_BLOCK_START) || content.includes(PS_BLOCK_START);
+  return content.includes(SHELL_FUNCTION_BLOCK_START);
 }
 
 function isFishFunctionInstalled(rcFile: string): boolean {
@@ -122,12 +119,8 @@ function isFishFunctionInstalled(rcFile: string): boolean {
   return content.includes("function opencode");
 }
 
-function installToRcFile(rcFile: string, shellFunction: string): void {
+function installBlockToRcFile(rcFile: string, block: string): void {
   if (isBlockInstalled(rcFile)) return;
-
-  const block = `${SHELL_FUNCTION_BLOCK_START}
-${shellFunction}
-${SHELL_FUNCTION_BLOCK_END}`;
 
   let existingContent = "";
   if (existsSync(rcFile)) {
@@ -151,28 +144,6 @@ function installFishFunction(rcFile: string): void {
   writeFileSync(rcFile, `${FISH_FUNCTION}\n`, "utf-8");
 }
 
-function installPsFunction(rcFile: string): void {
-  if (isBlockInstalled(rcFile)) return;
-
-  const block = `${PS_BLOCK_START}
-${PS_FUNCTION}
-${PS_BLOCK_END}`;
-
-  let existingContent = "";
-  if (existsSync(rcFile)) {
-    existingContent = readFileSync(rcFile, "utf-8");
-  }
-
-  const newContent = existingContent
-    ? existingContent.endsWith("\n")
-      ? `${existingContent}\n${block}\n`
-      : `${existingContent}\n\n${block}\n`
-    : `${block}\n`;
-
-  mkdirSync(dirname(rcFile), { recursive: true });
-  writeFileSync(rcFile, newContent, "utf-8");
-}
-
 export function installShellFunction(): { installed: boolean; rcFile: string; shellName: string } {
   const info = getShellInfo();
 
@@ -186,12 +157,20 @@ export function installShellFunction(): { installed: boolean; rcFile: string; sh
     case "fish":
       installFishFunction(rcFile);
       break;
-    case "powershell":
-      installPsFunction(rcFile);
+    case "powershell": {
+      const block = `${SHELL_FUNCTION_BLOCK_START}
+${PS_FUNCTION}
+${SHELL_FUNCTION_BLOCK_END}`;
+      installBlockToRcFile(rcFile, block);
       break;
-    default:
-      installToRcFile(rcFile, BASH_FUNCTION);
+    }
+    default: {
+      const block = `${SHELL_FUNCTION_BLOCK_START}
+${BASH_FUNCTION}
+${SHELL_FUNCTION_BLOCK_END}`;
+      installBlockToRcFile(rcFile, block);
       break;
+    }
   }
 
   return { installed: true, rcFile, shellName: String(shellName) };

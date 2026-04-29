@@ -81,7 +81,7 @@ vi.mock("./util.js", () => ({
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY_MS: 1000,
   LOCKFILE_NAME: ".opencode-sync.lock",
-  SESSION_ID_RE: /^[a-zA-Z0-9]+$/,
+  SESSION_ID_RE: /^[a-zA-Z0-9_]+$/,
 }));
 
 vi.mock("./banner.js", () => ({
