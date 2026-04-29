@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, saveConfig } from "./config.js";
 import { checkRepoAccess, clone, cloneAll, initEmptyRepo, isGitRepo, listRemoteBranches, maskUrl } from "./git.js";
-import { checkOpenCodeInstalled } from "./session.js";
+import { checkOpenCodeInstalled, getOpenCodeVersion, isVersionSupported, OPENCODE_MIN_VERSION } from "./session.js";
 import { installShellFunction } from "./shell.js";
 
 class SetupCancelledError extends Error {
@@ -30,9 +30,18 @@ const SETUP_INFO = `Для синхронизации нужен приватн�
 Создайте репозиторий на GitHub, затем укажите его URL.`;
 
 export async function runSetup(): Promise<void> {
-  if (!checkOpenCodeInstalled()) {
+  const bin = checkOpenCodeInstalled();
+  if (!bin) {
     clack.outro("opencode не найден. Установите opencode: https://opencode.ai");
     throw new SetupFailedError("opencode не найден");
+  }
+
+  const version = getOpenCodeVersion();
+  if (version && !isVersionSupported(version)) {
+    clack.outro(
+      `opencode ${version} не поддерживается (требуется ≥ ${OPENCODE_MIN_VERSION}).\nОбновите: opencode upgrade`,
+    );
+    throw new SetupFailedError(`opencode ${version} слишком старый`);
   }
 
   if (existsSync(CONFIG_FILE_PATH)) {

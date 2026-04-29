@@ -1,7 +1,10 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { log, OPENCODE_MAX_BUFFER, OPENCODE_TIMEOUT_MS, validateSessionId } from "./util.js";
+
+export const OPENCODE_MIN_VERSION = "1.14.0";
 
 export interface SessionInfo {
   id: string;
@@ -53,10 +56,6 @@ export interface PullResult {
   skipped: number;
   errors: number;
   deleted: number;
-}
-
-function getOpenCodeBin(): string {
-  return process.env.OPENCODE_BIN || "opencode";
 }
 
 export function _openCodeExecArgs(
@@ -117,9 +116,25 @@ async function runOpenCodeAsync(args: string[]): Promise<string> {
 
 export function listSessions(): SessionInfo[] {
   try {
-    const stdout = runOpenCode(["session", "list", "--format", "json"]);
-    const sessions = JSON.parse(stdout) as SessionInfo[];
-    return sessions;
+    const query =
+      "SELECT id, title, project_id, directory, time_created, time_updated FROM session WHERE time_archived IS NULL ORDER BY time_updated DESC";
+    const stdout = runOpenCode(["db", query, "--format", "json"]);
+    const rows = JSON.parse(stdout) as Array<{
+      id: string;
+      title: string;
+      project_id: string;
+      directory: string;
+      time_created: number;
+      time_updated: number;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      projectId: row.project_id,
+      directory: row.directory,
+      created: row.time_created,
+      updated: row.time_updated,
+    }));
   } catch (err: any) {
     log(`[session] Не удалось получить список сессий: ${err.message}`);
     return [];
@@ -164,12 +179,15 @@ export async function exportSessionAsync(sessionId: string): Promise<SessionExpo
 }
 
 export function saveSessionToFile(data: SessionExport, basePath: string): string {
-  const projectId = getProjectId(data);
   const sessionId = data.info.id;
-  const filePath = join(basePath, "sessions", projectId, `${sessionId}.json`);
+  const filePath = join(basePath, "sessions", "global", `${sessionId}.json`);
+  const overrideData: SessionExport = {
+    ...data,
+    info: { ...data.info, projectID: "global" },
+  };
 
   mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+  writeFileSync(filePath, `${JSON.stringify(overrideData, null, 2)}\n`, "utf-8");
 
   return filePath;
 }
@@ -186,10 +204,18 @@ export function readSessionFromFile(filePath: string): SessionExport | null {
 
 export function importSession(filePath: string): boolean {
   try {
-    runOpenCode(["import", filePath]);
+    const { cmd, cmdArgs } = openCodeExecArgs(["import", filePath]);
+    execFileSync(cmd, cmdArgs, {
+      encoding: "utf-8",
+      timeout: OPENCODE_TIMEOUT_MS,
+      maxBuffer: OPENCODE_MAX_BUFFER,
+      cwd: homedir(),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     return true;
   } catch (err: any) {
-    log(`[sync] Ошибка импорта ${filePath}: ${err.message}`);
+    const stderr = err.stderr?.toString()?.trim() || "";
+    log(`[sync] Ошибка импорта ${filePath}: ${stderr || err.message}`);
     return false;
   }
 }
@@ -225,13 +251,30 @@ export function deleteSession(sessionId: string): boolean {
 export function checkOpenCodeInstalled(): string {
   const { cmd, cmdArgs } = openCodeExecArgs(["--version"]);
   try {
-    execFileSync(cmd, cmdArgs, {
+    const result = execFileSync(cmd, cmdArgs, {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    return getOpenCodeBin();
+    return result.trim();
   } catch {
     return "";
   }
+}
+
+export function getOpenCodeVersion(): string | null {
+  const output = checkOpenCodeInstalled();
+  if (!output) return null;
+  const match = output.match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+export function isVersionSupported(version: string): boolean {
+  const min = OPENCODE_MIN_VERSION.split(".").map(Number);
+  const cur = version.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((cur[i] ?? 0) > (min[i] ?? 0)) return true;
+    if ((cur[i] ?? 0) < (min[i] ?? 0)) return false;
+  }
+  return true;
 }

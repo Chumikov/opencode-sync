@@ -200,13 +200,31 @@ describe("git.ts", () => {
       expect(addCall).toBeDefined();
     });
 
-    it("не делает ничего если remote совпадает", () => {
+    it("не делает ничего если remote совпадает и есть коммиты", () => {
       vi.mocked(existsSync).mockReturnValue(true);
-      mockGit.mockReturnValue("git@github.com:user/repo.git\n");
+      mockGit.mockReturnValueOnce("git@github.com:user/repo.git\n").mockReturnValueOnce("abc123\n");
 
       ensureRepo("git@github.com:user/repo.git", "/tmp/existing", "main");
 
-      expect(mockGit).toHaveBeenCalledTimes(1);
+      expect(mockGit).toHaveBeenCalledTimes(2);
+      expect(mockGit).toHaveBeenNthCalledWith(2, expect.any(String), ["rev-parse", "HEAD"], expect.any(Object));
+    });
+
+    it("инициализирует пустой клон", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      mockGit
+        .mockReturnValueOnce("git@github.com:user/repo.git\n")
+        .mockImplementationOnce(() => {
+          throw new Error("no commits");
+        })
+        .mockReturnValue("")
+        .mockReturnValue("")
+        .mockReturnValue("");
+
+      ensureRepo("git@github.com:user/repo.git", "/tmp/empty", "main");
+
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), ["checkout", "-b", "main"], expect.any(Object));
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), ["push", "-u", "origin", "main"], expect.any(Object));
     });
   });
 

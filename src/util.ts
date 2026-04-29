@@ -9,7 +9,7 @@ export const EXPORT_CONCURRENCY = 5;
 export const RETRY_ATTEMPTS = 3;
 export const RETRY_DELAY_MS = 1000;
 export const LOCKFILE_NAME = ".opencode-sync.lock";
-export const SESSION_ID_RE = /^[a-zA-Z0-9]+$/;
+export const SESSION_ID_RE = /^[a-zA-Z0-9_]+$/;
 
 export function validateSessionId(id: string): void {
   if (!SESSION_ID_RE.test(id)) {

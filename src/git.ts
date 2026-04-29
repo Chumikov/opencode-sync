@@ -86,6 +86,15 @@ export function listRemoteBranches(repoUrl: string): string[] {
   }
 }
 
+export function hasCommits(localPath: string): boolean {
+  try {
+    runGit(["rev-parse", "HEAD"], localPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function ensureRepo(repoUrl: string, localPath: string, branch: string): void {
   if (isGitRepo(localPath)) {
     try {
@@ -98,6 +107,11 @@ export function ensureRepo(repoUrl: string, localPath: string, branch: string): 
       runGit(["remote", "add", "origin", repoUrl], localPath);
     }
     ensureGitignore(localPath);
+
+    if (!hasCommits(localPath)) {
+      log("[git] Пустой клон, инициализирую...");
+      initEmptyRepo(localPath, branch);
+    }
   } else {
     clone(repoUrl, localPath, branch);
   }

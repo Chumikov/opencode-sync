@@ -43,7 +43,9 @@ vi.mock("./util.js", () => ({
 }));
 
 vi.mock("./session.js", () => ({
-  checkOpenCodeInstalled: vi.fn(() => "opencode"),
+  checkOpenCodeInstalled: vi.fn(() => "1.14.25"),
+  getOpenCodeVersion: vi.fn(() => "1.14.25"),
+  isVersionSupported: vi.fn(() => true),
 }));
 
 vi.mock("@clack/prompts", () => ({

@@ -2,7 +2,7 @@
 
 **Синхронизация сессий [OpenCode](https://opencode.ai) между вашими устройствами через приватный git-репозиторий.**
 
-Экспортирует сессии OpenCode в JSON-файлы, хранит их в вашем приватном git-репозитории. Каждое устройство push'ит свои сессии и pull'ит с других. Автосинхронизация встроена в shell — работает автоматически при каждом запуске OpenCode.
+Экспортирует **все** сессии OpenCode (все проекты, включая global) в JSON-файлы, хранит их в вашем приватном git-репозитории. Каждое устройство push'ит свои сессии и pull'ит с других. Автосинхронизация встроена в shell — работает автоматически при каждом запуске OpenCode.
 
 > [!IMPORTANT]
 > Репозиторий рекомендую **обязательно** сделать приватным. Файлы ваших сессий в OpenCode могут содержать промпты, фрагменты кода и результаты работы.
@@ -24,6 +24,8 @@
 | git | любой |
 | opencode | >= 1.14 |
 | SSH-ключ или PAT | для доступа к GitHub |
+
+> **Почему opencode ≥ 1.14?** Начиная с версии 1.14, OpenCode хранит сессии в SQLite и поддерживает команду `opencode db`, которая необходима для экспорта всех сессий (а не только текущего проекта). При `opencode-sync setup` версия проверяется автоматически.
 
 ## Установка
 
@@ -149,35 +151,13 @@ source ~/.zshrc   # или source ~/.bashrc
 
 ```bash
 opencode() {
-  command opencode-sync pull 2>/dev/null   # подтянуть сессии
-  command opencode "$@"                     # запустить opencode
+  local _sync_log="$HOME/.local/share/opencode-sync/sync.log"
+  mkdir -p "$(dirname "$_sync_log")" 2>/dev/null
+  command opencode-sync pull 2>>"$_sync_log" || echo "opencode-sync: ошибка pull (подробности: $_sync_log)" >&2
+  command opencode "$@"
   local exit_code=$?
-  command opencode-sync push 2>/dev/null   # отправить сессии
+  command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: $_sync_log)" >&2
   return $exit_code
-}
-```
-
-**fish:**
-
-```fish
-function opencode
-    command opencode-sync pull 2>/dev/null
-    command opencode $argv
-    set -l exit_code $status
-    command opencode-sync push 2>/dev/null
-    return $exit_code
-end
-```
-
-**PowerShell:**
-
-```powershell
-function opencode {
-    opencode-sync pull 2>$null
-    opencode.exe @args
-    $exit_code = $LASTEXITCODE
-    opencode-sync push 2>$null
-    return $exit_code
 }
 ```
 
@@ -186,7 +166,7 @@ function opencode {
 2. **opencode** — запускается как обычно
 3. **Push** — отправляет ваши сессии в репозиторий
 
-Ошибки синхронизации подавляются — opencode запускается в любом случае.
+Ошибки записываются в `~/.local/share/opencode-sync/sync.log`. При ошибке показывается краткое сообщение со ссылкой на лог-файл.
 
 ## Команды
 
@@ -202,23 +182,27 @@ opencode-sync pull --dry-run     # Показать что будет импор
 
 ## Как работает синхронизация
 
+Все сессии экспортируются и импортируются с `project_id = "global"`, что делает их доступными из любой директории на любом устройстве. Оригинальная привязка к проекту сохраняется в поле `directory` внутри JSON.
+
 Каждое устройство записывает в git **манифест** — список своих текущих сессий (`manifests/{device}.json`).
 
 ### Push
 
 1. Проверяет интернет и доступ к репозиторию (preflight)
-2. Экспортирует новые/изменённые сессии через `opencode export`
-3. Сохраняет JSON-файлы в `sessions/{project_id}/{session_id}.json`
-4. Обновляет манифест устройства
-5. Удаляет orphan-файлы (сессии, которых нет ни в одном манифесте)
-6. Push в git
+2. Получает **все** сессии через `opencode db` (все проекты, включая global)
+3. Экспортирует новые/изменённые сессии через `opencode export`
+4. Переопределяет `project_id` → `"global"` для кросс-платформенной совместимости
+5. Сохраняет JSON-файлы в `sessions/global/{session_id}.json`
+6. Обновляет манифест устройства
+7. Удаляет orphan-файлы (сессии, которых нет ни в одном манифесте)
+8. Push в git
 
 ### Pull
 
 1. Проверяет интернет и доступ к репозиторию (preflight)
 2. Pull из git
 3. Читает глобальное множество сессий из всех манифестов
-4. Импортирует новые/обновлённые сессии через `opencode import`
+4. Импортирует новые/обновлённые сессии через `opencode import` (запускается из `$HOME`, чтобы сессии получали `project_id = "global"`)
 5. Удаляет локальные сессии, которые были удалены на всех устройствах (через `opencode session delete`)
 
 ### Удаление сессий
@@ -250,14 +234,15 @@ opencode-sync pull --dry-run     # Показать что будет импор
 - На Windows используется `cmd /c` для совместимости с `.cmd`/`.exe` shim'ами (npm, Chocolatey, Scoop и др.)
 - URL маскируется в логах и сообщениях об ошибках
 - Preflight-проверки перед каждой операцией — понятные ошибки вместо сырого git stderr
+- Ошибки синхронизации записываются в `~/.local/share/opencode-sync/sync.log`, при ошибке показывается краткое сообщение в терминале
 
 ## Структура данных
 
 ```
 sync-repo/
 ├── sessions/
-│   └── {project_id}/
-│       └── {session_id}.json    # одна сессия = один файл
+│   └── global/
+│       └── {session_id}.json    # одна сессия = один файл (все с project_id = "global")
 ├── manifests/
 │   ├── laptop.json              # манифест устройства "laptop"
 │   └── desktop.json             # манифест устройства "desktop"
