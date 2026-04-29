@@ -11,10 +11,10 @@ const SYNC_LOG_POSIX = SYNC_LOG_PATH.replace(/\\/g, "/");
 const BASH_FUNCTION = `opencode() {
   local _sync_log="${SYNC_LOG_POSIX}"
   mkdir -p "$(dirname "$_sync_log")" 2>/dev/null
-  command opencode-sync pull 2>>"$_sync_log" || echo "opencode-sync: ошибка pull (подробности: \$_sync_log)" >&2
+  command opencode-sync pull 2>>"$_sync_log" || echo "opencode-sync: ошибка pull (подробности: $_sync_log)" >&2
   command opencode "$@"
   local exit_code=$?
-  command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: \$_sync_log)" >&2
+  command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: $_sync_log)" >&2
   return $exit_code
 }`;
 

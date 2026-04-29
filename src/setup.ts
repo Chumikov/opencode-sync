@@ -2,16 +2,7 @@ import { existsSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, saveConfig } from "./config.js";
-import {
-  checkRepoAccess,
-  clone,
-  cloneAll,
-  initEmptyRepo,
-  isGitRepo,
-  listBranches,
-  listRemoteBranches,
-  maskUrl,
-} from "./git.js";
+import { checkRepoAccess, clone, cloneAll, initEmptyRepo, isGitRepo, listRemoteBranches, maskUrl } from "./git.js";
 import { checkOpenCodeInstalled } from "./session.js";
 import { installShellFunction } from "./shell.js";
 
