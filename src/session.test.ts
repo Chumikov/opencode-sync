@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import {
@@ -215,7 +216,7 @@ describe("session.ts", () => {
 
       const path = saveSessionToFile(data, "/tmp/sync");
 
-      expect(path).toBe("/tmp/sync/sessions/abc123/01JTEST00000000000000000001.json");
+      expect(path).toBe(join("/tmp/sync", "sessions", "abc123", "01JTEST00000000000000000001.json"));
       expect(mockMkdirSync).toHaveBeenCalledWith(expect.any(String), {
         recursive: true,
       });

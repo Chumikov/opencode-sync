@@ -1,3 +1,4 @@
+import { join, resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncConfig } from "./config.js";
 import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, loadConfig, saveConfig, sessionsDir } from "./config.js";
@@ -36,11 +37,11 @@ describe("config.ts", () => {
 
   describe("constants", () => {
     it("CONFIG_FILE_PATH следует XDG-спецификации", () => {
-      expect(CONFIG_FILE_PATH).toMatch(/\.config\/opencode\/sync\.json$/);
+      expect(CONFIG_FILE_PATH).toMatch(/\.(config|Config)[\\/]opencode[\\/]sync\.json$/);
     });
 
     it("DEFAULT_LOCAL_PATH следует XDG-спецификации", () => {
-      expect(DEFAULT_LOCAL_PATH).toMatch(/\.local\/share\/opencode-sync$/);
+      expect(DEFAULT_LOCAL_PATH).toMatch(/\.(local|Local)[\\/]share[\\/]opencode-sync$/);
     });
   });
 
@@ -68,7 +69,7 @@ describe("config.ts", () => {
 
       expect(config.repo).toBe("git@github.com:override/repo.git");
       expect(config.deviceName).toBe("override-device");
-      expect(config.localPath).toBe("/tmp/override-path");
+      expect(config.localPath).toBe(resolve("/tmp/override-path"));
     });
 
     it("бросает ошибку если repo не указан", () => {
@@ -92,7 +93,7 @@ describe("config.ts", () => {
 
       const config = loadConfig();
 
-      expect(config.localPath).toBe(DEFAULT_LOCAL_PATH);
+      expect(config.localPath).toBe(resolve(DEFAULT_LOCAL_PATH));
     });
 
     it("использует main как fallback для branch", () => {
@@ -130,7 +131,7 @@ describe("config.ts", () => {
 
       const config = loadConfig();
 
-      expect(config.localPath).toMatch(/^\//);
+      expect(config.localPath).toMatch(/^[A-Z]:\\|^\/|^\//);
     });
   });
 
@@ -205,11 +206,11 @@ describe("config.ts", () => {
 
   describe("sessionsDir", () => {
     it("возвращает путь sessions внутри basePath", () => {
-      expect(sessionsDir("/tmp/sync")).toBe("/tmp/sync/sessions");
+      expect(sessionsDir("/tmp/sync")).toBe(join("/tmp/sync", "sessions"));
     });
 
     it("корректно обрабатывает пути с trailing slash (path.join нормализует)", () => {
-      expect(sessionsDir("/tmp/sync/")).toBe("/tmp/sync/sessions");
+      expect(sessionsDir("/tmp/sync/")).toBe(join("/tmp/sync", "sessions"));
     });
   });
 

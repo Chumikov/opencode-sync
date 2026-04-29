@@ -53,6 +53,29 @@ export function clone(repoUrl: string, localPath: string, branch: string): void 
   log("[git] Репозиторий клонирован");
 }
 
+export function cloneAll(repoUrl: string, localPath: string): void {
+  log(`[git] Клонирование (все ветки) ${maskUrl(repoUrl)} → ${localPath}`);
+
+  runGit(["clone", repoUrl, localPath]);
+  ensureGitignore(localPath);
+
+  log("[git] Репозиторий клонирован");
+}
+
+export function listRemoteBranches(repoUrl: string): string[] {
+  try {
+    const result = runGit(["ls-remote", "--heads", repoUrl]);
+    return result
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => line.replace(/^[a-f0-9]+\trefs\/heads\//, ""))
+      .filter((line) => line.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function ensureRepo(repoUrl: string, localPath: string, branch: string): void {
   if (isGitRepo(localPath)) {
     try {

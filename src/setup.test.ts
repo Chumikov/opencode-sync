@@ -21,8 +21,10 @@ vi.mock("./config.js", () => ({
 
 vi.mock("./git.js", () => ({
   clone: vi.fn(),
+  cloneAll: vi.fn(),
   maskUrl: vi.fn((u: string) => u),
   listBranches: vi.fn(() => []),
+  listRemoteBranches: vi.fn(() => []),
   isGitRepo: vi.fn(() => false),
   checkRepoAccess: vi.fn(() => ({ ok: true })),
 }));
@@ -62,7 +64,7 @@ vi.mock("@clack/prompts", () => ({
 import { existsSync } from "node:fs";
 import * as clack from "@clack/prompts";
 import { saveConfig } from "./config.js";
-import { checkRepoAccess, clone, isGitRepo, listBranches, maskUrl } from "./git.js";
+import { checkRepoAccess, clone, cloneAll, isGitRepo, listBranches, listRemoteBranches, maskUrl } from "./git.js";
 import { runSetup, SetupCancelledError, SetupFailedError } from "./setup.js";
 import { installShellFunction } from "./shell.js";
 
@@ -87,6 +89,7 @@ describe("setup.ts", () => {
     repoUrl?: string | symbol;
     deviceName?: string | symbol;
     cloneError?: boolean;
+    remoteBranches?: string[];
     branches?: string[];
     selectBranch?: string | symbol;
     shellInstalled?: boolean;
@@ -113,9 +116,12 @@ describe("setup.ts", () => {
         throw new Error("clone failed");
       });
       vi.mocked(isGitRepo).mockReturnValue(true);
+      vi.mocked(listRemoteBranches).mockReturnValue(overrides.remoteBranches ?? overrides.branches ?? []);
       vi.mocked(listBranches).mockReturnValue(overrides.branches ?? []);
-      if (overrides.branches && overrides.branches.length > 1) {
-        vi.mocked(clack.select).mockResolvedValue(overrides.selectBranch ?? overrides.branches[0]);
+      if ((overrides.remoteBranches ?? overrides.branches ?? []).length > 1) {
+        vi.mocked(clack.select).mockResolvedValue(
+          overrides.selectBranch ?? (overrides.remoteBranches ?? overrides.branches!)[0],
+        );
       }
     } else {
       vi.mocked(clone).mockImplementation(() => {});
@@ -294,11 +300,20 @@ describe("setup.ts", () => {
   });
 
   it("выбирает ветку при нескольких ветках", async () => {
-    await setupMocks({
-      cloneError: true,
-      branches: ["main", "dev", "staging"],
-      selectBranch: "dev",
+    let cloneCallCount = 0;
+    vi.mocked(clone).mockImplementation(() => {
+      cloneCallCount++;
+      if (cloneCallCount === 1) throw new Error("clone failed");
     });
+    vi.mocked(isGitRepo).mockReturnValue(true);
+    vi.mocked(listRemoteBranches).mockReturnValue(["main", "dev", "staging"]);
+    vi.mocked(clack.select).mockResolvedValue("dev");
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
 
     await runSetup();
 
@@ -306,10 +321,19 @@ describe("setup.ts", () => {
   });
 
   it("берёт единственную ветку автоматически", async () => {
-    await setupMocks({
-      cloneError: true,
-      branches: ["develop"],
+    let cloneCallCount = 0;
+    vi.mocked(clone).mockImplementation(() => {
+      cloneCallCount++;
+      if (cloneCallCount === 1) throw new Error("clone failed");
     });
+    vi.mocked(isGitRepo).mockReturnValue(true);
+    vi.mocked(listRemoteBranches).mockReturnValue(["develop"]);
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(clack.confirm).mockResolvedValue(false);
+    vi.mocked(clack.text)
+      .mockResolvedValueOnce("git@github.com:user/sessions.git")
+      .mockResolvedValueOnce("test-device");
+    vi.mocked(clack.isCancel).mockReturnValue(false);
 
     await runSetup();
 
@@ -317,11 +341,15 @@ describe("setup.ts", () => {
   });
 
   it("выходит если клонирование не удалось и репо не существует", async () => {
-    vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(clone).mockImplementation(() => {
       throw new Error("clone failed");
     });
+    vi.mocked(cloneAll).mockImplementation(() => {
+      throw new Error("clone failed");
+    });
     vi.mocked(isGitRepo).mockReturnValue(false);
+    vi.mocked(listRemoteBranches).mockReturnValue([]);
+    vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(clack.confirm).mockResolvedValue(false);
     vi.mocked(clack.text)
       .mockResolvedValueOnce("git@github.com:user/sessions.git")

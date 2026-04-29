@@ -2,7 +2,7 @@ import { existsSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, saveConfig } from "./config.js";
-import { checkRepoAccess, clone, isGitRepo, listBranches, maskUrl } from "./git.js";
+import { checkRepoAccess, clone, cloneAll, isGitRepo, listBranches, listRemoteBranches, maskUrl } from "./git.js";
 import { checkOpenCodeInstalled } from "./session.js";
 import { installShellFunction } from "./shell.js";
 
@@ -21,8 +21,6 @@ class SetupFailedError extends Error {
 }
 
 export { SetupCancelledError, SetupFailedError };
-
-import { log } from "./util.js";
 
 const SETUP_INFO = `Для синхронизации нужен приватный git-репозиторий.
 Он хранит экспортированные сессии в виде JSON-файлов.
@@ -148,40 +146,64 @@ export async function runSetup(): Promise<void> {
   } catch {
     s.stop("Не удалось клонировать с веткой main, пробую другие варианты");
 
-    if (isGitRepo(localPath) && listBranches(localPath).length === 0) {
-      log("[setup] Удаляю partial clone...");
+    if (isGitRepo(localPath)) {
       try {
         rmSync(localPath, { recursive: true, force: true });
       } catch {}
     }
 
-    if (isGitRepo(localPath)) {
-      const branches = listBranches(localPath);
+    const remoteBranches = listRemoteBranches(String(repoUrl));
 
-      if (branches.length > 0) {
-        if (branches.length === 1) {
-          branch = branches[0];
-          clack.log.info(`Обнаружена ветка: ${branch}`);
-        } else {
-          s.stop();
-
-          const selectedBranch = await clack.select({
-            message: "Выберите ветку",
-            options: branches.map((b) => ({ value: b, label: b })),
-          });
-
-          if (clack.isCancel(selectedBranch)) {
-            clack.cancel("Настройка отменена");
-            throw new SetupCancelledError();
-          }
-
-          branch = String(selectedBranch);
-        }
+    if (remoteBranches.length === 0) {
+      s.stop("Репозиторий пустой, клонирую как есть");
+      try {
+        cloneAll(String(repoUrl), localPath);
+        const localBranches = listBranches(localPath);
+        branch = localBranches.length > 0 ? localBranches[0] : "main";
+      } catch {
+        s.stop("Не удалось клонировать репозиторий");
+        clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);
+        throw new SetupFailedError("Не удалось клонировать репозиторий");
+      }
+    } else if (remoteBranches.length === 1) {
+      branch = remoteBranches[0];
+      clack.log.info(`Обнаружена ветка: ${branch}`);
+      try {
+        clone(String(repoUrl), localPath, branch);
+      } catch {
+        s.stop("Не удалось клонировать репозиторий");
+        clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);
+        throw new SetupFailedError("Не удалось клонировать репозиторий");
       }
     } else {
-      s.stop("Не удалось клонировать репозиторий");
-      clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);
-      throw new SetupFailedError("Не удалось клонировать репозиторий");
+      s.stop();
+
+      if (remoteBranches.includes("master")) {
+        branch = "master";
+      } else {
+        const selectedBranch = await clack.select({
+          message: "Выберите ветку",
+          options: remoteBranches.map((b) => ({ value: b, label: b })),
+        });
+
+        if (clack.isCancel(selectedBranch)) {
+          clack.cancel("Настройка отменена");
+          throw new SetupCancelledError();
+        }
+
+        branch = String(selectedBranch);
+      }
+
+      const s2 = clack.spinner();
+      s2.start("Клонирую репозиторий...");
+      try {
+        clone(String(repoUrl), localPath, branch);
+        s2.stop("Репозиторий клонирован");
+      } catch {
+        s2.stop("Не удалось клонировать репозиторий");
+        clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);
+        throw new SetupFailedError("Не удалось клонировать репозиторий");
+      }
     }
   }
 

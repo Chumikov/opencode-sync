@@ -9,6 +9,7 @@ vi.mock("node:fs", () => ({
 }));
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { findOrphanFiles, getGlobalSessionSet, manifestsDir, readManifest, writeManifest } from "./manifest.js";
 
 describe("manifest.ts", () => {
@@ -18,7 +19,7 @@ describe("manifest.ts", () => {
 
   describe("manifestsDir", () => {
     it("возвращает путь manifests внутри localPath", () => {
-      expect(manifestsDir("/tmp/sync")).toBe("/tmp/sync/manifests");
+      expect(manifestsDir("/tmp/sync")).toBe(join("/tmp/sync", "manifests"));
     });
   });
 
@@ -53,8 +54,12 @@ describe("manifest.ts", () => {
 
       writeManifest("/tmp/sync", "macbook", new Set(["s1", "s2"]));
 
-      expect(mkdirSync).toHaveBeenCalledWith("/tmp/sync/manifests", { recursive: true });
-      expect(writeFileSync).toHaveBeenCalledWith("/tmp/sync/manifests/macbook.json", expect.any(String), "utf-8");
+      expect(mkdirSync).toHaveBeenCalledWith(join("/tmp/sync", "manifests"), { recursive: true });
+      expect(writeFileSync).toHaveBeenCalledWith(
+        join("/tmp/sync", "manifests", "macbook.json"),
+        expect.any(String),
+        "utf-8",
+      );
 
       const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
       const parsed = JSON.parse(written);
@@ -121,7 +126,7 @@ describe("manifest.ts", () => {
 
       const orphans = findOrphanFiles("/tmp/sessions", new Set(["s1", "s2"]));
 
-      expect(orphans).toEqual(["/tmp/sessions/s3.json"]);
+      expect(orphans).toEqual([join("/tmp/sessions", "s3.json")]);
     });
 
     it("не считает живые сессии orphan", () => {
