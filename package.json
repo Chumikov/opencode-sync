@@ -35,7 +35,7 @@
     "test:coverage": "vitest run --coverage",
     "lint": "biome check src/",
     "lint:fix": "biome check --fix --unsafe src/",
-    "prepublishOnly": "npm run build && find dist -name '*.test.*' -delete && rm -rf dist/__tests__",
+    "prepublishOnly": "npm run build && node -e \"const{readdirSync,rmSync,statSync}=require('fs');const{join}=require('path');(function rm(p){for(const f of readdirSync(p)){const fp=join(p,f);statSync(fp).isDirectory()?rm(fp):f.includes('.test.')&&rmSync(fp)}})('dist');rmSync(join('dist','__tests__'),{recursive:true,force:true})\"",
     "prepare": "husky"
   },
   "engines": {
