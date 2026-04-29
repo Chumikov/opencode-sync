@@ -22,6 +22,7 @@ vi.mock("./config.js", () => ({
 vi.mock("./git.js", () => ({
   clone: vi.fn(),
   cloneAll: vi.fn(),
+  initEmptyRepo: vi.fn(),
   maskUrl: vi.fn((u: string) => u),
   listBranches: vi.fn(() => []),
   listRemoteBranches: vi.fn(() => []),

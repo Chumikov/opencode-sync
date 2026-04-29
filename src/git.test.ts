@@ -6,6 +6,7 @@ import {
   commit,
   ensureRepo,
   getDefaultBranch,
+  initEmptyRepo,
   isGitRepo,
   listBranches,
   listRemoteBranches,
@@ -120,6 +121,30 @@ describe("git.ts", () => {
         ["clone", "git@github.com:user/repo.git", "/tmp/clone"],
         expect.any(Object),
       );
+    });
+  });
+
+  describe("initEmptyRepo", () => {
+    it("создаёт ветку, initial commit и push -u", () => {
+      mockGit.mockReturnValue("");
+
+      initEmptyRepo("/tmp/repo", "main");
+
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), ["checkout", "-b", "main"], expect.any(Object));
+      expect(mockGit).toHaveBeenCalledWith(
+        expect.any(String),
+        ["commit", "--allow-empty", "-m", "init: initial commit"],
+        expect.any(Object),
+      );
+      expect(mockGit).toHaveBeenCalledWith(expect.any(String), ["push", "-u", "origin", "main"], expect.any(Object));
+    });
+
+    it("прокидывает ошибку git", () => {
+      mockGit.mockImplementation(() => {
+        throw new Error("push failed");
+      });
+
+      expect(() => initEmptyRepo("/tmp/repo", "main")).toThrow("push failed");
     });
   });
 

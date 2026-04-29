@@ -62,6 +62,16 @@ export function cloneAll(repoUrl: string, localPath: string): void {
   log("[git] Репозиторий клонирован");
 }
 
+export function initEmptyRepo(localPath: string, branch: string): void {
+  log(`[git] Инициализация пустого репозитория: branch=${branch}`);
+
+  runGit(["checkout", "-b", branch], localPath);
+  runGit(["commit", "--allow-empty", "-m", "init: initial commit"], localPath);
+  runGit(["push", "-u", "origin", branch], localPath);
+
+  log("[git] Пустой репозиторий инициализирован");
+}
+
 export function listRemoteBranches(repoUrl: string): string[] {
   try {
     const result = runGit(["ls-remote", "--heads", repoUrl]);
@@ -143,7 +153,7 @@ export async function push(localPath: string, branch: string, deviceName: string
 
   if (hasCommit) {
     log(`[git] Push в origin/${branch}...`);
-    await withRetry(() => runGit(["push", "origin", branch], localPath));
+    await withRetry(() => runGit(["push", "-u", "origin", branch], localPath));
     log("[git] Push завершён");
   } else {
     log("[git] Нет изменений для push");

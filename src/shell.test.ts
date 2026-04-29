@@ -183,7 +183,7 @@ describe("shell.ts", () => {
       expect(writeFileSync).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("opencode()"), "utf-8");
     });
 
-    it("добавляет функцию opencode() с command opencode", () => {
+    it("добавляет функцию opencode() с command opencode и лог-файлом", () => {
       process.env.SHELL = "/bin/zsh";
 
       vi.mocked(existsSync).mockReturnValue(false);
@@ -194,6 +194,9 @@ describe("shell.ts", () => {
       expect(written).toContain('command opencode "$@"');
       expect(written).toContain("command opencode-sync pull");
       expect(written).toContain("command opencode-sync push");
+      expect(written).toContain('>>"$_sync_log"');
+      expect(written).toContain("ошибка pull");
+      expect(written).toContain("ошибка push");
     });
   });
 
@@ -257,7 +260,7 @@ describe("shell.ts", () => {
       );
     });
 
-    it("содержит PS-синтаксис: @args, $LASTEXITCODE, 2>$null", () => {
+    it("содержит PS-синтаксис: @args, $LASTEXITCODE, лог-файл", () => {
       process.env.SHELL = "";
       process.env.PSModulePath = "/some/path";
       vi.mocked(existsSync).mockReturnValue(false);
@@ -267,7 +270,7 @@ describe("shell.ts", () => {
       const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
       expect(written).toContain("opencode.exe @args");
       expect(written).toContain("$LASTEXITCODE");
-      expect(written).toContain("2>$null");
+      expect(written).toContain(">>$syncLog");
     });
 
     it("не перезаписывает если блок уже установлен", () => {

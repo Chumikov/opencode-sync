@@ -2,7 +2,16 @@ import { existsSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import * as clack from "@clack/prompts";
 import { CONFIG_FILE_PATH, DEFAULT_LOCAL_PATH, saveConfig } from "./config.js";
-import { checkRepoAccess, clone, cloneAll, isGitRepo, listBranches, listRemoteBranches, maskUrl } from "./git.js";
+import {
+  checkRepoAccess,
+  clone,
+  cloneAll,
+  initEmptyRepo,
+  isGitRepo,
+  listBranches,
+  listRemoteBranches,
+  maskUrl,
+} from "./git.js";
 import { checkOpenCodeInstalled } from "./session.js";
 import { installShellFunction } from "./shell.js";
 
@@ -155,11 +164,11 @@ export async function runSetup(): Promise<void> {
     const remoteBranches = listRemoteBranches(String(repoUrl));
 
     if (remoteBranches.length === 0) {
-      s.stop("Репозиторий пустой, клонирую как есть");
+      s.stop("Репозиторий пустой, инициализирую...");
       try {
         cloneAll(String(repoUrl), localPath);
-        const localBranches = listBranches(localPath);
-        branch = localBranches.length > 0 ? localBranches[0] : "main";
+        initEmptyRepo(localPath, "main");
+        branch = "main";
       } catch {
         s.stop("Не удалось клонировать репозиторий");
         clack.outro(`Проверьте URL и доступ к репозиторию:\n  ${maskUrl(String(repoUrl))}`);

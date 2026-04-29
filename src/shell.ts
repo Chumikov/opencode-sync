@@ -1,31 +1,42 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { SYNC_LOG_PATH } from "./config.js";
 
 const SHELL_FUNCTION_BLOCK_START = "# >>> opencode-sync >>>";
 const SHELL_FUNCTION_BLOCK_END = "# <<< opencode-sync <<<";
 
+const SYNC_LOG_POSIX = SYNC_LOG_PATH.replace(/\\/g, "/");
+
 const BASH_FUNCTION = `opencode() {
-  command opencode-sync pull 2>/dev/null
+  local _sync_log="${SYNC_LOG_POSIX}"
+  mkdir -p "$(dirname "$_sync_log")" 2>/dev/null
+  command opencode-sync pull 2>>"$_sync_log" || echo "opencode-sync: ошибка pull (подробности: \$_sync_log)" >&2
   command opencode "$@"
   local exit_code=$?
-  command opencode-sync push 2>/dev/null
+  command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: \$_sync_log)" >&2
   return $exit_code
 }`;
 
 const FISH_FUNCTION = `function opencode
-    command opencode-sync pull 2>/dev/null
+    set -l _sync_log "${SYNC_LOG_POSIX}"
+    mkdir -p (dirname "$_sync_log") 2>/dev/null
+    command opencode-sync pull 2>>"$_sync_log"; or echo "opencode-sync: ошибка pull (подробности: $_sync_log)" >&2
     command opencode $argv
     set -l exit_code $status
-    command opencode-sync push 2>/dev/null
+    command opencode-sync push 2>>"$_sync_log"; or echo "opencode-sync: ошибка push (подробности: $_sync_log)" >&2
     return $exit_code
 end`;
 
 const PS_FUNCTION = `function opencode {
-    opencode-sync pull 2>$null
+    $syncLog = "${SYNC_LOG_PATH.replace(/\\/g, "\\")}"
+    New-Item -ItemType Directory -Force (Split-Path $syncLog) | Out-Null
+    opencode-sync pull 2>>$syncLog
+    if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка pull (подробности: $syncLog)" }
     opencode.exe @args
     $exit_code = $LASTEXITCODE
-    opencode-sync push 2>$null
+    opencode-sync push 2>>$syncLog
+    if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка push (подробности: $syncLog)" }
     return $exit_code
 }`;
 

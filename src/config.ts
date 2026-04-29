@@ -54,6 +54,9 @@ export const CONFIG_FILE_PATH = join(xdgConfigHome, "opencode", "sync.json");
 /** Путь к локальному клону sync-репозитория по умолчанию */
 export const DEFAULT_LOCAL_PATH = join(xdgDataHome, "opencode-sync");
 
+/** Путь к файлу лога синхронизации */
+export const SYNC_LOG_PATH = join(DEFAULT_LOCAL_PATH, "sync.log");
+
 // ─── Чтение конфигурации ─────────────────────────────────────────────────────
 
 /**
