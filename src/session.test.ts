@@ -97,8 +97,10 @@ describe("session.ts", () => {
       const result = listSessions();
 
       expect(mockExecFileSync).toHaveBeenCalledWith(
-        "opencode",
-        ["session", "list", "--format", "json"],
+        process.platform === "win32" ? "cmd" : "opencode",
+        process.platform === "win32"
+          ? ["/c", "opencode", "session", "list", "--format", "json"]
+          : ["session", "list", "--format", "json"],
         expect.any(Object),
       );
       expect(result).toHaveLength(2);
@@ -156,7 +158,11 @@ describe("session.ts", () => {
 
       expect(result).not.toBeNull();
       expect(result?.info.id).toBe("01JTEST00000000000000000001");
-      expect(mockExecFileSync).toHaveBeenCalledWith(expect.any(String), ["export", "s1"], expect.any(Object));
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        process.platform === "win32" ? "cmd" : expect.any(String),
+        process.platform === "win32" ? ["/c", "opencode", "export", "s1"] : ["export", "s1"],
+        expect.any(Object),
+      );
     });
 
     it("возвращает null при битом JSON", () => {
@@ -263,8 +269,10 @@ describe("session.ts", () => {
 
       expect(result).toBe(true);
       expect(mockExecFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        ["import", "/tmp/sync/sessions/abc/s1.json"],
+        process.platform === "win32" ? "cmd" : expect.any(String),
+        process.platform === "win32"
+          ? ["/c", "opencode", "import", "/tmp/sync/sessions/abc/s1.json"]
+          : ["import", "/tmp/sync/sessions/abc/s1.json"],
         expect.any(Object),
       );
     });
@@ -288,8 +296,8 @@ describe("session.ts", () => {
 
       expect(result).toBe(true);
       expect(mockExecFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        ["session", "delete", "s1"],
+        process.platform === "win32" ? "cmd" : expect.any(String),
+        process.platform === "win32" ? ["/c", "opencode", "session", "delete", "s1"] : ["session", "delete", "s1"],
         expect.any(Object),
       );
     });

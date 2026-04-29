@@ -55,11 +55,24 @@ export interface PullResult {
   deleted: number;
 }
 
-const OPENCODE_BIN = process.env.OPENCODE_BIN || "opencode";
+function getOpenCodeBin(): string {
+  return process.env.OPENCODE_BIN || "opencode";
+}
+
+const IS_WIN = process.platform === "win32";
+
+function openCodeExecArgs(args: string[]): { cmd: string; cmdArgs: string[] } {
+  const bin = getOpenCodeBin();
+  if (IS_WIN && !process.env.OPENCODE_BIN) {
+    return { cmd: "cmd", cmdArgs: ["/c", bin, ...args] };
+  }
+  return { cmd: bin, cmdArgs: args };
+}
 
 function runOpenCode(args: string[]): string {
+  const { cmd, cmdArgs } = openCodeExecArgs(args);
   try {
-    const result = execFileSync(OPENCODE_BIN, args, {
+    const result = execFileSync(cmd, cmdArgs, {
       encoding: "utf-8",
       timeout: OPENCODE_TIMEOUT_MS,
       maxBuffer: OPENCODE_MAX_BUFFER,
@@ -74,10 +87,11 @@ function runOpenCode(args: string[]): string {
 }
 
 async function runOpenCodeAsync(args: string[]): Promise<string> {
+  const { cmd, cmdArgs } = openCodeExecArgs(args);
   return new Promise((resolve, reject) => {
     execFile(
-      OPENCODE_BIN,
-      args,
+      cmd,
+      cmdArgs,
       {
         encoding: "utf-8",
         timeout: OPENCODE_TIMEOUT_MS,
@@ -203,14 +217,14 @@ export function deleteSession(sessionId: string): boolean {
 }
 
 export function checkOpenCodeInstalled(): string {
-  const bin = process.env.OPENCODE_BIN || "opencode";
+  const { cmd, cmdArgs } = openCodeExecArgs(["--version"]);
   try {
-    execFileSync(bin, ["--version"], {
+    execFileSync(cmd, cmdArgs, {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    return bin;
+    return getOpenCodeBin();
   } catch {
     return "";
   }
