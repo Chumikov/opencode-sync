@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mockConfig, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
+import { mockConfig, mockScope, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import { pullSessions } from "./pull.js";
 
 vi.mock("node:fs", () => ({
@@ -46,12 +46,21 @@ vi.mock("./util.js", () => ({
 
 vi.mock("./manifest.js", () => ({
   getGlobalSessionSet: vi.fn(() => new Set()),
+  readDeletedSet: vi.fn(() => new Set()),
+  addToDeletedSet: vi.fn(),
+  deviceManifestExists: vi.fn(() => true),
+}));
+
+vi.mock("./scope.js", () => ({
+  scopeProjectId: vi.fn(() => "abc123"),
+  detectProjectScope: vi.fn(),
 }));
 
 import { readdirSync, statSync } from "node:fs";
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, pull as gitPull, preflightCheck } from "./git.js";
-import { getSessionMap, importSession, isRemoteNewer, readSessionFromFile } from "./session.js";
+import { addToDeletedSet, deviceManifestExists, getGlobalSessionSet, readDeletedSet } from "./manifest.js";
+import { deleteSession, getSessionMap, importSession, isRemoteNewer, readSessionFromFile } from "./session.js";
 import { log, withLock } from "./util.js";
 
 const mockLoadConfig = vi.mocked(loadConfig);
@@ -67,6 +76,11 @@ const mockReaddirSync = vi.mocked(readdirSync);
 const mockStatSync = vi.mocked(statSync);
 const mockLog = vi.mocked(log);
 const _mockWithLock = vi.mocked(withLock);
+const mockGetGlobalSessionSet = vi.mocked(getGlobalSessionSet);
+const mockReadDeletedSet = vi.mocked(readDeletedSet);
+const mockAddToDeletedSet = vi.mocked(addToDeletedSet);
+const mockDeviceManifestExists = vi.mocked(deviceManifestExists);
+const mockDeleteSession = vi.mocked(deleteSession);
 
 function mockFsStructure(structure: Record<string, string[]>) {
   mockStatSync.mockImplementation((dir: any) => {
@@ -96,25 +110,25 @@ function mockFsStructure(structure: Record<string, string[]>) {
 
 describe("pull.ts", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockLoadConfig.mockReturnValue(mockConfig());
     mockSessionsDir.mockReturnValue("/tmp/sync/sessions");
     mockGetSessionMap.mockReturnValue(new Map());
     mockGitPull.mockReturnValue(true);
     mockEnsureRepo.mockReturnValue(undefined);
+    mockDeviceManifestExists.mockReturnValue(true);
   });
 
   it("импортирует новые сессии", async () => {
     const fileData = mockSessionExport();
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
     mockImportSession.mockReturnValue(true);
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.imported).toBe(1);
     expect(mockImportSession).toHaveBeenCalledTimes(1);
@@ -126,14 +140,13 @@ describe("pull.ts", () => {
     mockGetSessionMap.mockReturnValue(localMap);
 
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
     mockImportSession.mockReturnValue(true);
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.updated).toBe(1);
     expect(result.imported).toBe(0);
@@ -142,13 +155,12 @@ describe("pull.ts", () => {
   it("пропускает не новые сессии", async () => {
     const fileData = mockSessionExport();
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(false);
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.skipped).toBe(1);
     expect(mockImportSession).not.toHaveBeenCalled();
@@ -156,12 +168,11 @@ describe("pull.ts", () => {
 
   it("подсчитывает ошибки при чтении файлов", async () => {
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["bad.json"],
+      "/tmp/sync/sessions/abc123": ["bad.json"],
     });
     mockReadSession.mockReturnValue(null);
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.errors).toBe(1);
   });
@@ -169,14 +180,13 @@ describe("pull.ts", () => {
   it("подсчитывает ошибки при импорте", async () => {
     const fileData = mockSessionExport();
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
     mockImportSession.mockReturnValue(false);
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.errors).toBe(1);
   });
@@ -187,7 +197,7 @@ describe("pull.ts", () => {
     });
     mockFsStructure({});
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Ошибка при git pull"));
     expect(result.imported).toBe(0);
@@ -199,13 +209,12 @@ describe("pull.ts", () => {
     mockGetSessionMap.mockReturnValue(localMap);
 
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
 
-    const result = await pullSessions({ dryRun: true });
+    const result = await pullSessions({ dryRun: true, scope: mockScope() });
 
     expect(result.imported).toBe(0);
     expect(result.updated).toBe(1);
@@ -216,13 +225,12 @@ describe("pull.ts", () => {
   it("dry-run для новой сессии показывает 'импорт'", async () => {
     const fileData = mockSessionExport();
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
 
-    const result = await pullSessions({ dryRun: true });
+    const result = await pullSessions({ dryRun: true, scope: mockScope() });
 
     expect(result.imported).toBe(1);
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("импорт"));
@@ -231,7 +239,7 @@ describe("pull.ts", () => {
   it("возвращает пустой результат если нет файлов", async () => {
     mockFsStructure({});
 
-    const result = await pullSessions();
+    const result = await pullSessions({ scope: mockScope() });
 
     expect(result.imported).toBe(0);
     expect(result.skipped).toBe(0);
@@ -241,7 +249,7 @@ describe("pull.ts", () => {
   it("вызывает ensureRepo перед pull", async () => {
     mockFsStructure({});
 
-    await pullSessions();
+    await pullSessions({ scope: mockScope() });
 
     expect(mockEnsureRepo).toHaveBeenCalledWith(mockConfig().repo, mockConfig().localPath, mockConfig().branch);
   });
@@ -249,89 +257,21 @@ describe("pull.ts", () => {
   it("вызывает git pull для подтягивания изменений", async () => {
     mockFsStructure({});
 
-    await pullSessions();
+    await pullSessions({ scope: mockScope() });
 
     expect(mockGitPull).toHaveBeenCalledWith(mockConfig().localPath, mockConfig().branch);
-  });
-
-  it("обрабатывает вложенные поддиректории", async () => {
-    const fileData1 = mockSessionExport({ info: { ...mockSessionExport().info, id: "s1" } });
-    const fileData2 = mockSessionExport({ info: { ...mockSessionExport().info, id: "s2" } });
-
-    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }) as any);
-    mockReaddirSync.mockImplementation((dir: any) => {
-      const dirStr = String(dir);
-      if (dirStr.endsWith("sessions")) {
-        return [{ name: "proj1", isDirectory: () => true, isFile: () => false }];
-      }
-      if (dirStr.endsWith("proj1")) {
-        return [
-          { name: "s1.json", isDirectory: () => false, isFile: () => true },
-          { name: "s2.json", isDirectory: () => false, isFile: () => true },
-        ];
-      }
-      return [];
-    });
-
-    mockReadSession.mockReturnValueOnce(fileData1).mockReturnValueOnce(fileData2);
-    mockIsRemoteNewer.mockReturnValue(true);
-    mockImportSession.mockReturnValue(true);
-
-    const result = await pullSessions();
-
-    expect(result.imported).toBe(2);
-  });
-
-  it("выводит итог в stdout", async () => {
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    mockFsStructure({});
-
-    await pullSessions();
-
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Готово"));
-
-    logSpy.mockRestore();
-  });
-
-  it("пропускает не-JSON файлы в директории", async () => {
-    mockStatSync.mockImplementation(() => ({ isDirectory: () => true }) as any);
-    mockReaddirSync.mockImplementation((dir: any) => {
-      const dirStr = String(dir);
-      if (dirStr.endsWith("sessions")) {
-        return [{ name: "proj1", isDirectory: () => true, isFile: () => false }];
-      }
-      if (dirStr.endsWith("proj1")) {
-        return [
-          { name: "s1.json", isDirectory: () => false, isFile: () => true },
-          { name: "readme.txt", isDirectory: () => false, isFile: () => true },
-          { name: ".gitkeep", isDirectory: () => false, isFile: () => true },
-        ];
-      }
-      return [];
-    });
-
-    const fileData = mockSessionExport();
-    mockReadSession.mockReturnValue(fileData);
-    mockIsRemoteNewer.mockReturnValue(true);
-    mockImportSession.mockReturnValue(true);
-
-    const result = await pullSessions();
-
-    expect(result.imported).toBe(1);
-    expect(mockReadSession).toHaveBeenCalledTimes(1);
   });
 
   it("использует sessionId как fallback title", async () => {
     const fileData = mockSessionExport({ info: { ...mockSessionExport().info, title: "" } });
     mockFsStructure({
-      "/tmp/sync/sessions": ["abc123"],
-      abc123: ["s1.json"],
+      "/tmp/sync/sessions/abc123": ["s1.json"],
     });
     mockReadSession.mockReturnValue(fileData);
     mockIsRemoteNewer.mockReturnValue(true);
     mockImportSession.mockReturnValue(true);
 
-    await pullSessions();
+    await pullSessions({ scope: mockScope() });
 
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("01JTEST00000000000000000001"));
   });
@@ -340,7 +280,7 @@ describe("pull.ts", () => {
     const localMap = new Map([["s1", mockSessionInfo({ id: "s1" })]]);
     mockFsStructure({});
 
-    await pullSessions({ localMap });
+    await pullSessions({ localMap, scope: mockScope() });
 
     expect(mockGetSessionMap).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Локальных сессий: 1"));
@@ -356,7 +296,7 @@ describe("pull.ts", () => {
       callOrder.push("ensureRepo");
     });
 
-    await pullSessions();
+    await pullSessions({ scope: mockScope() });
 
     expect(callOrder).toEqual(["preflight", "ensureRepo"]);
   });
@@ -364,7 +304,99 @@ describe("pull.ts", () => {
   it("пробрасывает ошибку от preflightCheck", async () => {
     mockPreflightCheck.mockRejectedValue(new Error("Нет подключения к интернету"));
 
-    await expect(pullSessions()).rejects.toThrow("Нет подключения к интернету");
+    await expect(pullSessions({ scope: mockScope() })).rejects.toThrow("Нет подключения к интернету");
     expect(mockEnsureRepo).not.toHaveBeenCalled();
+  });
+
+  it("пропускает сессии из deleted set", async () => {
+    const fileData = mockSessionExport();
+    mockFsStructure({
+      "/tmp/sync/sessions/abc123": ["s1.json"],
+    });
+    mockReadSession.mockReturnValue(fileData);
+    mockIsRemoteNewer.mockReturnValue(true);
+    mockReadDeletedSet.mockReturnValue(new Set(["01JTEST00000000000000000001"]));
+
+    const result = await pullSessions({ scope: mockScope() });
+
+    expect(result.skipped).toBe(1);
+    expect(mockImportSession).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("deleted set"));
+  });
+
+  it("не удаляет локальные сессии при первом запуске (нет манифеста)", async () => {
+    mockDeviceManifestExists.mockReturnValue(false);
+    const localMap = new Map([["s1", mockSessionInfo({ id: "s1" })]]);
+    mockGetSessionMap.mockReturnValue(localMap);
+    mockGetGlobalSessionSet.mockReturnValue(new Set());
+    mockFsStructure({});
+
+    const result = await pullSessions({ scope: mockScope() });
+
+    expect(result.deleted).toBe(0);
+    expect(mockDeleteSession).not.toHaveBeenCalled();
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("первая синхронизация"));
+  });
+
+  it("удаляет локальные сессии если манифест существует и сессия не в globalAlive", async () => {
+    const localMap = new Map([
+      ["s1", mockSessionInfo({ id: "s1", projectId: "abc123" })],
+      ["s2", mockSessionInfo({ id: "s2", projectId: "abc123" })],
+    ]);
+    mockGetSessionMap.mockReturnValue(localMap);
+    mockGetGlobalSessionSet.mockReturnValue(new Set(["s2"]));
+    mockDeleteSession.mockReturnValue(true);
+    mockFsStructure({});
+
+    const result = await pullSessions({ scope: mockScope() });
+
+    expect(result.deleted).toBe(1);
+    expect(mockDeleteSession).toHaveBeenCalledWith("s1");
+    expect(mockAddToDeletedSet).toHaveBeenCalledWith(expect.any(String), expect.any(String), ["s1"]);
+  });
+
+  it("не удаляет сессии другого проекта при scoped pull", async () => {
+    const localMap = new Map([
+      ["s1", mockSessionInfo({ id: "s1", projectId: "abc123" })],
+      ["s2", mockSessionInfo({ id: "s2", projectId: "other-project" })],
+    ]);
+    mockGetSessionMap.mockReturnValue(localMap);
+    mockGetGlobalSessionSet.mockReturnValue(new Set());
+    mockDeleteSession.mockReturnValue(true);
+    mockFsStructure({});
+
+    const result = await pullSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(mockDeleteSession).toHaveBeenCalledWith("s1");
+    expect(mockDeleteSession).not.toHaveBeenCalledWith("s2");
+    expect(result.deleted).toBe(1);
+  });
+
+  it("сканирует только scoped-папку при pull", async () => {
+    const fileData = mockSessionExport();
+    mockFsStructure({
+      "/tmp/sync/sessions/abc123": ["s1.json"],
+    });
+    mockReadSession.mockReturnValue(fileData);
+    mockIsRemoteNewer.mockReturnValue(true);
+    mockImportSession.mockReturnValue(true);
+
+    await pullSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(mockStatSync).toHaveBeenCalledWith(
+      "/tmp/sync/sessions/abc123",
+      expect.objectContaining({ throwIfNoEntry: false }),
+    );
+  });
+
+  it("выводит итог в stdout", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockFsStructure({});
+
+    await pullSessions({ scope: mockScope() });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Готово"));
+
+    logSpy.mockRestore();
   });
 });

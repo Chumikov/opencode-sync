@@ -46,6 +46,39 @@ export function getGlobalSessionSet(localPath: string): Set<string> {
   return global;
 }
 
+export function readDeletedSet(localPath: string, deviceName: string): Set<string> {
+  const filePath = join(manifestsDir(localPath), `${deviceName}-deleted.json`);
+  if (!existsSync(filePath)) return new Set();
+  try {
+    const data = JSON.parse(readFileSync(filePath, "utf-8"));
+    return new Set(data.sessionIds ?? []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeDeletedSet(localPath: string, deviceName: string, ids: Set<string>): void {
+  const dir = manifestsDir(localPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  const filePath = join(dir, `${deviceName}-deleted.json`);
+  writeFileSync(filePath, `${JSON.stringify({ sessionIds: [...ids] }, null, 2)}\n`, "utf-8");
+}
+
+export function addToDeletedSet(localPath: string, deviceName: string, newIds: string[]): void {
+  const existing = readDeletedSet(localPath, deviceName);
+  for (const id of newIds) {
+    existing.add(id);
+  }
+  writeDeletedSet(localPath, deviceName, existing);
+}
+
+export function deviceManifestExists(localPath: string, deviceName: string): boolean {
+  const filePath = join(manifestsDir(localPath), `${deviceName}.json`);
+  return existsSync(filePath);
+}
+
 export function findOrphanFiles(sessionsDir: string, aliveIds: Set<string>): string[] {
   const orphans: string[] = [];
 

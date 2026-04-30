@@ -10,7 +10,17 @@ vi.mock("node:fs", () => ({
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { findOrphanFiles, getGlobalSessionSet, manifestsDir, readManifest, writeManifest } from "./manifest.js";
+import {
+  addToDeletedSet,
+  deviceManifestExists,
+  findOrphanFiles,
+  getGlobalSessionSet,
+  manifestsDir,
+  readDeletedSet,
+  readManifest,
+  writeDeletedSet,
+  writeManifest,
+} from "./manifest.js";
 
 describe("manifest.ts", () => {
   beforeEach(() => {
@@ -104,6 +114,90 @@ describe("manifest.ts", () => {
       const result = getGlobalSessionSet("/tmp/sync");
 
       expect(result.size).toBe(0);
+    });
+  });
+
+  describe("readDeletedSet", () => {
+    it("возвращает пустой Set если файл не существует", () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const result = readDeletedSet("/tmp/sync", "macbook");
+
+      expect(result.size).toBe(0);
+    });
+
+    it("читает sessionIds из JSON", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ sessionIds: ["s1", "s2"] }));
+
+      const result = readDeletedSet("/tmp/sync", "macbook");
+
+      expect(result).toEqual(new Set(["s1", "s2"]));
+    });
+
+    it("возвращает пустой Set при битом JSON", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue("NOT JSON");
+
+      const result = readDeletedSet("/tmp/sync", "macbook");
+
+      expect(result.size).toBe(0);
+    });
+  });
+
+  describe("writeDeletedSet", () => {
+    it("создаёт директорию и записывает JSON", () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      writeDeletedSet("/tmp/sync", "macbook", new Set(["s1", "s2"]));
+
+      expect(mkdirSync).toHaveBeenCalledWith(join("/tmp/sync", "manifests"), { recursive: true });
+      expect(writeFileSync).toHaveBeenCalledWith(
+        join("/tmp/sync", "manifests", "macbook-deleted.json"),
+        expect.any(String),
+        "utf-8",
+      );
+
+      const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+      const parsed = JSON.parse(written);
+      expect(parsed.sessionIds).toEqual(["s1", "s2"]);
+    });
+  });
+
+  describe("addToDeletedSet", () => {
+    it("добавляет новые id к существующему множеству", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ sessionIds: ["s1"] }));
+
+      addToDeletedSet("/tmp/sync", "macbook", ["s2", "s3"]);
+
+      const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+      const parsed = JSON.parse(written);
+      expect(parsed.sessionIds).toEqual(["s1", "s2", "s3"]);
+    });
+
+    it("создаёт новый файл если не существует", () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      addToDeletedSet("/tmp/sync", "macbook", ["s1"]);
+
+      const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+      const parsed = JSON.parse(written);
+      expect(parsed.sessionIds).toEqual(["s1"]);
+    });
+  });
+
+  describe("deviceManifestExists", () => {
+    it("возвращает true если манифест существует", () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+
+      expect(deviceManifestExists("/tmp/sync", "macbook")).toBe(true);
+    });
+
+    it("возвращает false если манифест не существует", () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      expect(deviceManifestExists("/tmp/sync", "macbook")).toBe(false);
     });
   });
 

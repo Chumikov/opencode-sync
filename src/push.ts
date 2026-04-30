@@ -2,7 +2,9 @@ import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
-import { findOrphanFiles, getGlobalSessionSet, writeManifest } from "./manifest.js";
+import { addToDeletedSet, findOrphanFiles, getGlobalSessionSet, readManifest, writeManifest } from "./manifest.js";
+import type { ProjectScope } from "./scope.js";
+import { scopeProjectId } from "./scope.js";
 import {
   checkOpenCodeInstalled,
   exportSessionAsync,
@@ -14,7 +16,18 @@ import {
 } from "./session.js";
 import { EXPORT_CONCURRENCY, log, promisePool, withLockAsync } from "./util.js";
 
-export async function pushSessions(options?: { dryRun?: boolean; sessions?: SessionInfo[] }): Promise<PushResult> {
+function filterSessionsByScope(sessions: SessionInfo[], scope: ProjectScope): SessionInfo[] {
+  if (scope.type === "global") {
+    return sessions.filter((s) => !s.projectId || s.projectId === "global");
+  }
+  return sessions.filter((s) => s.projectId === scope.projectId);
+}
+
+export async function pushSessions(options?: {
+  dryRun?: boolean;
+  sessions?: SessionInfo[];
+  scope?: ProjectScope;
+}): Promise<PushResult> {
   if (!checkOpenCodeInstalled()) {
     throw new Error("opencode не найден. Установите opencode: https://opencode.ai");
   }
@@ -25,10 +38,12 @@ export async function pushSessions(options?: { dryRun?: boolean; sessions?: Sess
   await preflightCheck(config);
   ensureRepo(config.repo, config.localPath, config.branch);
 
-  const sessions = options?.sessions ?? listSessions();
+  const allSessions = options?.sessions ?? listSessions();
+  const scope = options?.scope ?? { type: "global" as const };
+  const scopedSessions = filterSessionsByScope(allSessions, scope);
 
   const freshnessMap = new Map<string, boolean>();
-  for (const s of sessions) {
+  for (const s of scopedSessions) {
     if (!s.id) {
       freshnessMap.set(s.id, false);
       continue;
@@ -38,11 +53,11 @@ export async function pushSessions(options?: { dryRun?: boolean; sessions?: Sess
   }
 
   const newCount = [...freshnessMap.values()].filter(Boolean).length;
-  console.log(`Push: ${sessions.length} сессий, ${newCount} новых/изменённых`);
+  console.log(`Push: ${scopedSessions.length} сессий (scope: ${scopeProjectId(scope)}), ${newCount} новых/изменённых`);
 
   const toExport: SessionInfo[] = [];
 
-  for (const session of sessions) {
+  for (const session of scopedSessions) {
     if (!session.id || !freshnessMap.get(session.id)) {
       result.skipped++;
       continue;
@@ -87,12 +102,20 @@ export async function pushSessions(options?: { dryRun?: boolean; sessions?: Sess
   }
 
   if (!options?.dryRun) {
-    const localIds = new Set(sessions.filter((s) => s.id).map((s) => s.id));
+    const localIds = new Set(allSessions.filter((s) => s.id).map((s) => s.id));
+    const oldManifest = readManifest(config.localPath, config.deviceName);
+
+    const removedIds = [...oldManifest].filter((id) => !localIds.has(id));
+    if (removedIds.length > 0) {
+      addToDeletedSet(config.localPath, config.deviceName, removedIds);
+      log(`[push] ${removedIds.length} сессий удалено, добавлено в deleted set`);
+    }
+
     writeManifest(config.localPath, config.deviceName, localIds);
 
     const globalAlive = getGlobalSessionSet(config.localPath);
-    const sessDir = sessionsDir(config.localPath);
-    const orphans = findOrphanFiles(sessDir, globalAlive);
+    const scopedSessDir = join(sessionsDir(config.localPath), scopeProjectId(scope));
+    const orphans = findOrphanFiles(scopedSessDir, globalAlive);
 
     if (orphans.length > 0) {
       for (const file of orphans) {
@@ -106,7 +129,7 @@ export async function pushSessions(options?: { dryRun?: boolean; sessions?: Sess
       console.log(`  Удалено orphan-файлов: ${orphans.length}`);
     }
 
-    if (result.exported > 0 || orphans.length > 0) {
+    if (result.exported > 0 || orphans.length > 0 || removedIds.length > 0) {
       log(`[push] Экспортировано: ${result.exported}, пропущено: ${result.skipped}`);
       await withLockAsync(config.localPath, () => gitPush(config.localPath, config.branch, config.deviceName));
       console.log(

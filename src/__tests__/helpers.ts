@@ -1,3 +1,4 @@
+import type { ProjectScope } from "../scope.js";
 import type { SessionExport, SessionInfo } from "../session.js";
 
 export const mockSessionInfo = (overrides?: Partial<SessionInfo>): SessionInfo => ({
@@ -36,4 +37,10 @@ export const mockConfig = () => ({
   deviceName: "test-device",
   localPath: "/tmp/opencode-sync-test",
   branch: "main",
+});
+
+export const mockScope = (overrides?: Partial<ProjectScope>): ProjectScope => ({
+  type: "project",
+  projectId: "abc123",
+  ...overrides,
 });

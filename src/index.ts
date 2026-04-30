@@ -6,6 +6,7 @@ import { CONFIG_FILE_PATH, loadConfig } from "./config.js";
 import { checkRepoAccess, isGitRepo, maskUrl, PreflightError } from "./git.js";
 import { pullSessions } from "./pull.js";
 import { pushSessions } from "./push.js";
+import { detectProjectScope } from "./scope.js";
 import { listSessions } from "./session.js";
 import { runSetup, SetupCancelledError } from "./setup.js";
 
@@ -69,7 +70,8 @@ program
   .option("--dry-run", "Показать что будет экспортировано без реального push")
   .action(async (opts) => {
     try {
-      await pushSessions({ dryRun: opts.dryRun });
+      const scope = detectProjectScope();
+      await pushSessions({ dryRun: opts.dryRun, scope });
       if (opts.dryRun) {
         console.log("\n[dry-run] Режим пробного запуска, изменения не применены");
       }
@@ -85,7 +87,8 @@ program
   .option("--dry-run", "Показать что будет импортировано без реального импорта")
   .action(async (opts) => {
     try {
-      await pullSessions({ dryRun: opts.dryRun });
+      const scope = detectProjectScope();
+      await pullSessions({ dryRun: opts.dryRun, scope });
       if (opts.dryRun) {
         console.log("\n[dry-run] Режим пробного запуска, изменения не применены");
       }
@@ -104,9 +107,12 @@ program
       console.log("── Sync ─────────────────────────────────────");
       console.log();
 
+      const scope = detectProjectScope();
+
       console.log("[pull]");
       const pullResult = await pullSessions({
         dryRun: opts.dryRun,
+        scope,
       });
 
       console.log();
@@ -116,6 +122,7 @@ program
       const pushResult = await pushSessions({
         dryRun: opts.dryRun,
         sessions,
+        scope,
       });
 
       console.log();

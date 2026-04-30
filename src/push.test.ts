@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mockConfig, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
+import { mockConfig, mockScope, mockSessionExport, mockSessionInfo } from "./__tests__/helpers.js";
 import { pushSessions } from "./push.js";
 
 vi.mock("./config.js", () => ({
@@ -43,10 +43,18 @@ vi.mock("./manifest.js", () => ({
   writeManifest: vi.fn(),
   getGlobalSessionSet: vi.fn(() => new Set()),
   findOrphanFiles: vi.fn(() => []),
+  readManifest: vi.fn(() => new Set()),
+  addToDeletedSet: vi.fn(),
+}));
+
+vi.mock("./scope.js", () => ({
+  scopeProjectId: vi.fn(() => "abc123"),
+  detectProjectScope: vi.fn(),
 }));
 
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
+import { addToDeletedSet, findOrphanFiles, getGlobalSessionSet, readManifest, writeManifest } from "./manifest.js";
 import { exportSessionAsync, isLocalNewer, listSessions, saveSessionToFile } from "./session.js";
 import { log, promisePool, withLockAsync } from "./util.js";
 
@@ -62,10 +70,15 @@ const mockPreflightCheck = vi.mocked(preflightCheck);
 const mockLog = vi.mocked(log);
 const mockPromisePool = vi.mocked(promisePool);
 const mockWithLockAsync = vi.mocked(withLockAsync);
+const mockReadManifest = vi.mocked(readManifest);
+const mockWriteManifest = vi.mocked(writeManifest);
+const mockGetGlobalSessionSet = vi.mocked(getGlobalSessionSet);
+const mockFindOrphanFiles = vi.mocked(findOrphanFiles);
+const mockAddToDeletedSet = vi.mocked(addToDeletedSet);
 
 describe("push.ts", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockLoadConfig.mockReturnValue(mockConfig());
     mockSessionsDir.mockReturnValue("/tmp/sync/sessions");
   });
@@ -76,7 +89,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(true);
     mockExportAsync.mockResolvedValue(mockSessionExport());
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.exported).toBe(1);
     expect(mockSaveSession).toHaveBeenCalled();
@@ -88,7 +101,7 @@ describe("push.ts", () => {
     mockListSessions.mockReturnValue(sessions);
     mockIsLocalNewer.mockReturnValue(false);
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.skipped).toBe(1);
     expect(result.exported).toBe(0);
@@ -101,7 +114,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(true);
     mockExportAsync.mockResolvedValueOnce(mockSessionExport()).mockRejectedValueOnce(new Error("export error"));
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.exported).toBe(1);
     expect(result.errors).toBe(1);
@@ -113,7 +126,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(true);
     mockExportAsync.mockResolvedValue(null);
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.skipped).toBe(1);
     expect(result.exported).toBe(0);
@@ -123,7 +136,7 @@ describe("push.ts", () => {
     mockListSessions.mockReturnValue([]);
     mockIsLocalNewer.mockReturnValue(false);
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.exported).toBe(0);
     expect(mockGitPush).not.toHaveBeenCalled();
@@ -134,7 +147,7 @@ describe("push.ts", () => {
     mockListSessions.mockReturnValue(sessions);
     mockIsLocalNewer.mockReturnValue(true);
 
-    const result = await pushSessions({ dryRun: true });
+    const result = await pushSessions({ dryRun: true, scope: mockScope() });
 
     expect(result.exported).toBe(1);
     expect(mockExportAsync).not.toHaveBeenCalled();
@@ -147,7 +160,7 @@ describe("push.ts", () => {
     mockListSessions.mockReturnValue(sessions);
     mockIsLocalNewer.mockReturnValue(true);
 
-    await pushSessions({ dryRun: true });
+    await pushSessions({ dryRun: true, scope: mockScope() });
 
     expect(mockSaveSession).not.toHaveBeenCalled();
     expect(mockGitPush).not.toHaveBeenCalled();
@@ -156,7 +169,7 @@ describe("push.ts", () => {
   it("вызывает ensureRepo перед работой", async () => {
     mockListSessions.mockReturnValue([]);
 
-    await pushSessions();
+    await pushSessions({ scope: mockScope() });
 
     expect(mockEnsureRepo).toHaveBeenCalledWith(mockConfig().repo, mockConfig().localPath, mockConfig().branch);
   });
@@ -166,7 +179,7 @@ describe("push.ts", () => {
     mockListSessions.mockReturnValue(sessions);
     mockIsLocalNewer.mockReturnValue(true);
 
-    const result = await pushSessions();
+    const result = await pushSessions({ scope: mockScope() });
 
     expect(result.skipped).toBe(1);
     expect(mockExportAsync).not.toHaveBeenCalled();
@@ -177,7 +190,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(false);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await pushSessions();
+    await pushSessions({ scope: mockScope() });
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("2 сессий"));
 
@@ -189,7 +202,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(false);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await pushSessions({ sessions });
+    await pushSessions({ sessions, scope: mockScope() });
 
     expect(mockListSessions).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("1 сессий"));
@@ -203,7 +216,7 @@ describe("push.ts", () => {
     mockIsLocalNewer.mockReturnValue(true);
     mockExportAsync.mockResolvedValue(mockSessionExport());
 
-    await pushSessions();
+    await pushSessions({ scope: mockScope() });
 
     expect(mockPromisePool).toHaveBeenCalled();
   });
@@ -218,7 +231,7 @@ describe("push.ts", () => {
       callOrder.push("ensureRepo");
     });
 
-    await pushSessions();
+    await pushSessions({ scope: mockScope() });
 
     expect(callOrder).toEqual(["preflight", "ensureRepo"]);
   });
@@ -226,7 +239,103 @@ describe("push.ts", () => {
   it("пробрасывает PreflightError от preflightCheck", async () => {
     mockPreflightCheck.mockRejectedValue(new Error("Нет подключения к интернету"));
 
-    await expect(pushSessions()).rejects.toThrow("Нет подключения к интернету");
+    await expect(pushSessions({ scope: mockScope() })).rejects.toThrow("Нет подключения к интернету");
     expect(mockEnsureRepo).not.toHaveBeenCalled();
+  });
+
+  it("фильтрует сессии по project scope", async () => {
+    const sessions = [
+      mockSessionInfo({ id: "s1", projectId: "abc123" }),
+      mockSessionInfo({ id: "s2", projectId: "other" }),
+      mockSessionInfo({ id: "s3", projectId: "global" }),
+    ];
+    mockListSessions.mockReturnValue(sessions);
+    mockIsLocalNewer.mockReturnValue(true);
+    mockExportAsync.mockResolvedValue(mockSessionExport());
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await pushSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(result.exported).toBe(1);
+    expect(mockExportAsync).toHaveBeenCalledTimes(1);
+    expect(mockExportAsync).toHaveBeenCalledWith("s1");
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("1 сессий"));
+
+    logSpy.mockRestore();
+  });
+
+  it("фильтрует сессии по global scope", async () => {
+    const sessions = [
+      mockSessionInfo({ id: "s1", projectId: "abc123" }),
+      mockSessionInfo({ id: "s2", projectId: "global" }),
+      mockSessionInfo({ id: "s3", projectId: "" }),
+    ];
+    mockListSessions.mockReturnValue(sessions);
+    mockIsLocalNewer.mockReturnValue(true);
+    mockExportAsync.mockResolvedValue(mockSessionExport());
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await pushSessions({ scope: { type: "global" } });
+
+    expect(result.exported).toBe(2);
+    expect(mockExportAsync).toHaveBeenCalledTimes(2);
+
+    logSpy.mockRestore();
+  });
+
+  it("записывает полный манифест (все id, не только scope)", async () => {
+    const sessions = [
+      mockSessionInfo({ id: "s1", projectId: "abc123" }),
+      mockSessionInfo({ id: "s2", projectId: "other" }),
+    ];
+    mockListSessions.mockReturnValue(sessions);
+    mockIsLocalNewer.mockReturnValue(false);
+
+    await pushSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(mockWriteManifest).toHaveBeenCalledWith(expect.any(String), expect.any(String), new Set(["s1", "s2"]));
+  });
+
+  it("отслеживает удалённые сессии — добавляет в deleted set", async () => {
+    const sessions = [mockSessionInfo({ id: "s1" })];
+    mockListSessions.mockReturnValue(sessions);
+    mockReadManifest.mockReturnValue(new Set(["s1", "s2", "s3"]));
+    mockIsLocalNewer.mockReturnValue(false);
+
+    await pushSessions({ scope: mockScope() });
+
+    expect(mockAddToDeletedSet).toHaveBeenCalledWith(expect.any(String), expect.any(String), ["s2", "s3"]);
+  });
+
+  it("не вызывает addToDeletedSet если нет удалённых", async () => {
+    const sessions = [mockSessionInfo({ id: "s1" })];
+    mockListSessions.mockReturnValue(sessions);
+    mockReadManifest.mockReturnValue(new Set(["s1"]));
+    mockIsLocalNewer.mockReturnValue(false);
+
+    await pushSessions({ scope: mockScope() });
+
+    expect(mockAddToDeletedSet).not.toHaveBeenCalled();
+  });
+
+  it("ищет orphan-файлы только в scoped-папке", async () => {
+    mockListSessions.mockReturnValue([]);
+    mockGetGlobalSessionSet.mockReturnValue(new Set());
+    mockFindOrphanFiles.mockReturnValue([]);
+
+    await pushSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(mockFindOrphanFiles).toHaveBeenCalledWith("/tmp/sync/sessions/abc123", expect.any(Set));
+  });
+
+  it("push'ит если есть удалённые сессии даже без экспорта", async () => {
+    const sessions = [mockSessionInfo({ id: "s1" })];
+    mockListSessions.mockReturnValue(sessions);
+    mockReadManifest.mockReturnValue(new Set(["s1", "s2"]));
+    mockIsLocalNewer.mockReturnValue(false);
+
+    await pushSessions({ scope: mockScope() });
+
+    expect(mockGitPush).toHaveBeenCalled();
   });
 });

@@ -34,6 +34,7 @@ vi.mock("./pull.js", () => ({
     updated: 0,
     skipped: 0,
     errors: 0,
+    deleted: 0,
   })),
 }));
 
@@ -82,6 +83,10 @@ vi.mock("./util.js", () => ({
   RETRY_DELAY_MS: 1000,
   LOCKFILE_NAME: ".opencode-sync.lock",
   SESSION_ID_RE: /^[a-zA-Z0-9_]+$/,
+}));
+
+vi.mock("./scope.js", () => ({
+  detectProjectScope: vi.fn(() => ({ type: "project", projectId: "abc123" })),
 }));
 
 vi.mock("./banner.js", () => ({
@@ -145,7 +150,10 @@ describe("index.ts CLI", () => {
       await runCommand(["push"]);
 
       const { pushSessions } = await import("./push.js");
-      expect(vi.mocked(pushSessions)).toHaveBeenCalledWith({ dryRun: undefined });
+      expect(vi.mocked(pushSessions)).toHaveBeenCalledWith({
+        dryRun: undefined,
+        scope: { type: "project", projectId: "abc123" },
+      });
 
       logSpy.mockRestore();
       errorSpy.mockRestore();
@@ -158,7 +166,10 @@ describe("index.ts CLI", () => {
       await runCommand(["push", "--dry-run"]);
 
       const { pushSessions } = await import("./push.js");
-      expect(vi.mocked(pushSessions)).toHaveBeenCalledWith({ dryRun: true });
+      expect(vi.mocked(pushSessions)).toHaveBeenCalledWith({
+        dryRun: true,
+        scope: { type: "project", projectId: "abc123" },
+      });
 
       logSpy.mockRestore();
       errorSpy.mockRestore();
@@ -173,7 +184,10 @@ describe("index.ts CLI", () => {
       await runCommand(["pull"]);
 
       const { pullSessions } = await import("./pull.js");
-      expect(vi.mocked(pullSessions)).toHaveBeenCalledWith({ dryRun: undefined });
+      expect(vi.mocked(pullSessions)).toHaveBeenCalledWith({
+        dryRun: undefined,
+        scope: { type: "project", projectId: "abc123" },
+      });
 
       logSpy.mockRestore();
       errorSpy.mockRestore();
@@ -186,7 +200,10 @@ describe("index.ts CLI", () => {
       await runCommand(["pull", "--dry-run"]);
 
       const { pullSessions } = await import("./pull.js");
-      expect(vi.mocked(pullSessions)).toHaveBeenCalledWith({ dryRun: true });
+      expect(vi.mocked(pullSessions)).toHaveBeenCalledWith({
+        dryRun: true,
+        scope: { type: "project", projectId: "abc123" },
+      });
 
       logSpy.mockRestore();
       errorSpy.mockRestore();

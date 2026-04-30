@@ -2,7 +2,9 @@ import { readdirSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, pull as gitPull, preflightCheck } from "./git.js";
-import { getGlobalSessionSet } from "./manifest.js";
+import { addToDeletedSet, deviceManifestExists, getGlobalSessionSet, readDeletedSet } from "./manifest.js";
+import type { ProjectScope } from "./scope.js";
+import { scopeProjectId } from "./scope.js";
 import {
   checkOpenCodeInstalled,
   deleteSession,
@@ -43,6 +45,7 @@ function findJsonFiles(dir: string): string[] {
 export async function pullSessions(options?: {
   dryRun?: boolean;
   localMap?: Map<string, SessionInfo>;
+  scope?: ProjectScope;
 }): Promise<PullResult & { localMap?: Map<string, SessionInfo> }> {
   if (!checkOpenCodeInstalled()) {
     throw new Error("opencode не найден. Установите opencode: https://opencode.ai");
@@ -53,6 +56,8 @@ export async function pullSessions(options?: {
 
   await preflightCheck(config);
   ensureRepo(config.repo, config.localPath, config.branch);
+
+  const scope = options?.scope ?? { type: "global" as const };
 
   console.log("Pull: загрузка изменений из remote...");
   try {
@@ -65,9 +70,11 @@ export async function pullSessions(options?: {
   const localMap = options?.localMap ?? getSessionMap();
   log(`[pull] Локальных сессий: ${localMap.size}`);
 
-  const sessDir = sessionsDir(config.localPath);
-  const files = findJsonFiles(sessDir);
-  log(`[pull] Файлов в репозитории: ${files.length}`);
+  const scopedSessDir = join(sessionsDir(config.localPath), scopeProjectId(scope));
+  const files = findJsonFiles(scopedSessDir);
+  log(`[pull] Файлов в репозитории (scope: ${scopeProjectId(scope)}): ${files.length}`);
+
+  const deletedIds = readDeletedSet(config.localPath, config.deviceName);
 
   let done = 0;
   const total = files.length;
@@ -83,6 +90,13 @@ export async function pullSessions(options?: {
     const sessionId = fileData.info.id;
     const sessionTitle = fileData.info.title || sessionId;
     const isLocal = localMap.has(sessionId);
+
+    if (deletedIds.has(sessionId)) {
+      log(`  ⏭ ${sessionTitle} (${sessionId}) — в deleted set, пропускаем`);
+      result.skipped++;
+      done++;
+      continue;
+    }
 
     if (!isRemoteNewer(fileData, localMap)) {
       result.skipped++;
@@ -121,18 +135,38 @@ export async function pullSessions(options?: {
   if (done > 0 && !options?.dryRun) process.stdout.write("\n");
 
   if (!options?.dryRun) {
-    const globalAlive = getGlobalSessionSet(config.localPath);
-    const localIds = [...localMap.keys()];
+    const canDelete = deviceManifestExists(config.localPath, config.deviceName);
+    if (!canDelete) {
+      log("[pull] Манифест устройства не найден в репо — пропуск удаления (первая синхронизация)");
+    }
 
-    for (const localId of localIds) {
-      if (!globalAlive.has(localId)) {
-        const sessionInfo = localMap.get(localId)!;
-        log(`  🗑 ${sessionInfo.title || localId} (удалено на другом устройстве)`);
-        if (deleteSession(localId)) {
-          result.deleted++;
-        } else {
-          result.errors++;
+    if (canDelete) {
+      const globalAlive = getGlobalSessionSet(config.localPath);
+      const scopeId = scopeProjectId(scope);
+      const localIds = [...localMap.entries()]
+        .filter(([, info]) => {
+          const pid = info.projectId || "global";
+          return pid === scopeId;
+        })
+        .map(([id]) => id);
+
+      const newlyDeleted: string[] = [];
+
+      for (const localId of localIds) {
+        if (!globalAlive.has(localId)) {
+          const sessionInfo = localMap.get(localId)!;
+          log(`  🗑 ${sessionInfo.title || localId} (удалено на другом устройстве)`);
+          if (deleteSession(localId)) {
+            result.deleted++;
+            newlyDeleted.push(localId);
+          } else {
+            result.errors++;
+          }
         }
+      }
+
+      if (newlyDeleted.length > 0) {
+        addToDeletedSet(config.localPath, config.deviceName, newlyDeleted);
       }
     }
 
