@@ -45,6 +45,7 @@ vi.mock("./manifest.js", () => ({
   findOrphanFiles: vi.fn(() => []),
   readManifest: vi.fn(() => new Set()),
   addToDeletedSet: vi.fn(),
+  deviceManifestExists: vi.fn(() => true),
 }));
 
 vi.mock("./scope.js", () => ({
@@ -54,7 +55,14 @@ vi.mock("./scope.js", () => ({
 
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
-import { addToDeletedSet, findOrphanFiles, getGlobalSessionSet, readManifest, writeManifest } from "./manifest.js";
+import {
+  addToDeletedSet,
+  deviceManifestExists,
+  findOrphanFiles,
+  getGlobalSessionSet,
+  readManifest,
+  writeManifest,
+} from "./manifest.js";
 import { exportSessionAsync, isLocalNewer, listSessions, saveSessionToFile } from "./session.js";
 import { log, promisePool, withLockAsync } from "./util.js";
 
@@ -75,12 +83,14 @@ const mockWriteManifest = vi.mocked(writeManifest);
 const mockGetGlobalSessionSet = vi.mocked(getGlobalSessionSet);
 const mockFindOrphanFiles = vi.mocked(findOrphanFiles);
 const mockAddToDeletedSet = vi.mocked(addToDeletedSet);
+const mockDeviceManifestExists = vi.mocked(deviceManifestExists);
 
 describe("push.ts", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockLoadConfig.mockReturnValue(mockConfig());
     mockSessionsDir.mockReturnValue("/tmp/sync/sessions");
+    mockDeviceManifestExists.mockReturnValue(true);
   });
 
   it("экспортирует новые сессии и push'ит", async () => {
@@ -337,5 +347,43 @@ describe("push.ts", () => {
     await pushSessions({ scope: mockScope() });
 
     expect(mockGitPush).toHaveBeenCalled();
+  });
+
+  it("первый push (нет манифеста) экспортирует все сессии без фильтрации по scope", async () => {
+    const sessions = [
+      mockSessionInfo({ id: "s1", projectId: "abc123" }),
+      mockSessionInfo({ id: "s2", projectId: "other" }),
+      mockSessionInfo({ id: "s3", projectId: "global" }),
+    ];
+    mockListSessions.mockReturnValue(sessions);
+    mockDeviceManifestExists.mockReturnValue(false);
+    mockIsLocalNewer.mockReturnValue(true);
+    mockExportAsync.mockResolvedValue(mockSessionExport());
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = await pushSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(result.exported).toBe(3);
+    expect(mockExportAsync).toHaveBeenCalledTimes(3);
+    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Первый push"));
+
+    logSpy.mockRestore();
+  });
+
+  it("повторный push (манифест есть) фильтрует по scope", async () => {
+    const sessions = [
+      mockSessionInfo({ id: "s1", projectId: "abc123" }),
+      mockSessionInfo({ id: "s2", projectId: "other" }),
+    ];
+    mockListSessions.mockReturnValue(sessions);
+    mockDeviceManifestExists.mockReturnValue(true);
+    mockIsLocalNewer.mockReturnValue(true);
+    mockExportAsync.mockResolvedValue(mockSessionExport());
+
+    const result = await pushSessions({ scope: mockScope({ type: "project", projectId: "abc123" }) });
+
+    expect(result.exported).toBe(1);
+    expect(mockExportAsync).toHaveBeenCalledTimes(1);
+    expect(mockExportAsync).toHaveBeenCalledWith("s1");
   });
 });

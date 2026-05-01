@@ -2,7 +2,14 @@ import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
-import { addToDeletedSet, findOrphanFiles, getGlobalSessionSet, readManifest, writeManifest } from "./manifest.js";
+import {
+  addToDeletedSet,
+  deviceManifestExists,
+  findOrphanFiles,
+  getGlobalSessionSet,
+  readManifest,
+  writeManifest,
+} from "./manifest.js";
 import type { ProjectScope } from "./scope.js";
 import { scopeProjectId } from "./scope.js";
 import {
@@ -40,7 +47,12 @@ export async function pushSessions(options?: {
 
   const allSessions = options?.sessions ?? listSessions();
   const scope = options?.scope ?? { type: "global" as const };
-  const scopedSessions = filterSessionsByScope(allSessions, scope);
+  const isFirstPush = !deviceManifestExists(config.localPath, config.deviceName);
+  const scopedSessions = isFirstPush ? allSessions : filterSessionsByScope(allSessions, scope);
+
+  if (isFirstPush) {
+    log("[push] Первый push — экспорт всех сессий без фильтрации по scope");
+  }
 
   const freshnessMap = new Map<string, boolean>();
   for (const s of scopedSessions) {
