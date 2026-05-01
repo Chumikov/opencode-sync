@@ -21,6 +21,7 @@ import {
 vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
   execFile: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 vi.mock("node:fs", () => ({
@@ -28,6 +29,9 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
+  openSync: vi.fn(() => 99),
+  closeSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 vi.mock("./util.js", () => ({
@@ -38,15 +42,43 @@ vi.mock("./util.js", () => ({
   EXPORT_CONCURRENCY: 5,
 }));
 
-import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
 const mockExecFileSync = vi.mocked(execFileSync);
-const mockExecFile = vi.mocked(execFile);
+const mockSpawn = vi.mocked(spawn);
 const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
+const mockOpenSync = vi.mocked(openSync);
+const mockCloseSync = vi.mocked(closeSync);
+const mockUnlinkSync = vi.mocked(unlinkSync);
+
+function mockSpawnSuccess(): EventEmitter {
+  const child = new EventEmitter();
+  (child as any).stderr = new EventEmitter();
+  setTimeout(() => child.emit("close", 0), 0);
+  return child;
+}
+
+function mockSpawnError(stderr: string): EventEmitter {
+  const child = new EventEmitter();
+  (child as any).stderr = new EventEmitter();
+  setTimeout(() => {
+    (child as any).stderr.emit("data", Buffer.from(stderr));
+    child.emit("close", 1);
+  }, 0);
+  return child;
+}
+
+function mockSpawnFail(error: Error): EventEmitter {
+  const child = new EventEmitter();
+  (child as any).stderr = new EventEmitter();
+  setTimeout(() => child.emit("error", error), 0);
+  return child;
+}
 
 function mockSessionListJSON(
   sessions: Array<{
@@ -169,34 +201,44 @@ describe("session.ts", () => {
   });
 
   describe("exportSessionAsync", () => {
-    it("экспортирует сессию через async execFile", async () => {
+    it("экспортирует сессию через временный файл", async () => {
       const exported = mockSessionExport();
-      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
-        cb(null, JSON.stringify(exported), "");
-      }) as any);
+      mockSpawn.mockReturnValue(mockSpawnSuccess() as any);
+      mockReadFileSync.mockReturnValue(JSON.stringify(exported));
 
       const result = await exportSessionAsync("s1");
 
       expect(result).not.toBeNull();
       expect(result?.info.id).toBe("01JTEST00000000000000000001");
+      expect(mockOpenSync).toHaveBeenCalledWith(expect.stringContaining("oc-export-s1.json"), "w");
+      expect(mockCloseSync).toHaveBeenCalled();
+      expect(mockUnlinkSync).toHaveBeenCalledWith(expect.stringContaining("oc-export-s1.json"));
     });
 
     it("возвращает null при битом JSON", async () => {
-      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
-        cb(null, "NOT JSON {{{", "");
-      }) as any);
+      mockSpawn.mockReturnValue(mockSpawnSuccess() as any);
+      mockReadFileSync.mockReturnValue("NOT JSON {{{");
 
       const result = await exportSessionAsync("s1");
 
       expect(result).toBeNull();
+      expect(mockUnlinkSync).toHaveBeenCalled();
     });
 
-    it("пробрасывает не-JSON ошибки", async () => {
-      mockExecFile.mockImplementation(((_bin: any, _args: any, _opts: any, cb: any) => {
-        cb(new Error("export failed"), "", "stderr");
-      }) as any);
+    it("пробрасывает не-JSON ошибки (exit code)", async () => {
+      mockSpawn.mockReturnValue(mockSpawnError("export failed") as any);
 
       await expect(exportSessionAsync("s1")).rejects.toThrow("opencode export s1");
+      expect(mockCloseSync).toHaveBeenCalled();
+      expect(mockUnlinkSync).toHaveBeenCalled();
+    });
+
+    it("пробрасывает ошибки spawn", async () => {
+      mockSpawn.mockReturnValue(mockSpawnFail(new Error("spawn failed")) as any);
+
+      await expect(exportSessionAsync("s1")).rejects.toThrow("opencode export s1");
+      expect(mockCloseSync).toHaveBeenCalled();
+      expect(mockUnlinkSync).toHaveBeenCalled();
     });
   });
 

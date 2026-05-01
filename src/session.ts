@@ -1,6 +1,6 @@
-import { execFile, execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { execFileSync, spawn } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { log, OPENCODE_MAX_BUFFER, OPENCODE_TIMEOUT_MS, validateSessionId } from "./util.js";
 
@@ -91,29 +91,6 @@ function runOpenCode(args: string[]): string {
   }
 }
 
-async function runOpenCodeAsync(args: string[]): Promise<string> {
-  const { cmd, cmdArgs } = openCodeExecArgs(args);
-  return new Promise((resolve, reject) => {
-    execFile(
-      cmd,
-      cmdArgs,
-      {
-        encoding: "utf-8",
-        timeout: OPENCODE_TIMEOUT_MS,
-        maxBuffer: OPENCODE_MAX_BUFFER,
-      },
-      (err, stdout, stderr) => {
-        if (err) {
-          const msg = stderr?.trim() || err.message;
-          reject(new Error(`opencode ${args.join(" ")}: ${msg}`));
-        } else {
-          resolve(stdout);
-        }
-      },
-    );
-  });
-}
-
 export function listSessions(): SessionInfo[] {
   try {
     const query =
@@ -152,15 +129,45 @@ export function getSessionMap(): Map<string, SessionInfo> {
 
 export async function exportSessionAsync(sessionId: string): Promise<SessionExport | null> {
   validateSessionId(sessionId);
+  const tmpPath = join(tmpdir(), `oc-export-${sessionId}.json`);
   try {
-    const stdout = await runOpenCodeAsync(["export", sessionId]);
-    return JSON.parse(stdout) as SessionExport;
+    const { cmd, cmdArgs } = openCodeExecArgs(["export", sessionId]);
+    let stderr = "";
+    await new Promise<void>((resolve, reject) => {
+      const fd = openSync(tmpPath, "w");
+      const child = spawn(cmd, cmdArgs, {
+        timeout: OPENCODE_TIMEOUT_MS,
+        stdio: ["pipe", fd, "pipe"],
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+      child.on("close", (code) => {
+        closeSync(fd);
+        if (code === 0) {
+          resolve();
+        } else {
+          const msg = stderr.trim() || `exit code ${code}`;
+          reject(new Error(`opencode ${cmdArgs.join(" ")}: ${msg}`));
+        }
+      });
+      child.on("error", (err) => {
+        closeSync(fd);
+        reject(new Error(`opencode ${cmdArgs.join(" ")}: ${err.message}`));
+      });
+    });
+    const raw = readFileSync(tmpPath, "utf-8");
+    return JSON.parse(raw) as SessionExport;
   } catch (err: any) {
     if (err.message.includes("JSON")) {
       log(`  ⚠ ${sessionId}: битый JSON от opencode export, пропускаем`);
       return null;
     }
     throw err;
+  } finally {
+    try {
+      unlinkSync(tmpPath);
+    } catch {}
   }
 }
 

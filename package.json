@@ -1,6 +1,6 @@
 {
   "name": "@chumikov/opencode-sync",
-  "version": "1.2.3",
+  "version": "1.2.6",
   "description": "Git-based session synchronization for OpenCode",
   "author": "Chumikov Sec",
   "license": "MIT",
