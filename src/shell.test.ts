@@ -198,6 +198,19 @@ describe("shell.ts", () => {
       expect(written).toContain("ошибка pull");
       expect(written).toContain("ошибка push");
     });
+
+    it("содержит trap EXIT для гарантированного push при выходе", () => {
+      process.env.SHELL = "/bin/zsh";
+
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      installShellFunction();
+
+      const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("trap");
+      expect(written).toContain("EXIT");
+      expect(written).toMatch(/trap.*opencode-sync push.*EXIT/s);
+    });
   });
 
   describe("installShellFunction — fish", () => {
@@ -271,6 +284,19 @@ describe("shell.ts", () => {
       expect(written).toContain("opencode.exe @args");
       expect(written).toContain("$LASTEXITCODE");
       expect(written).toContain(">>$syncLog");
+    });
+
+    it("содержит try/finally для гарантированного push при выходе", () => {
+      process.env.SHELL = "";
+      process.env.PSModulePath = "/some/path";
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      installShellFunction();
+
+      const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("try {");
+      expect(written).toContain("} finally {");
+      expect(written).toMatch(/finally.*opencode-sync push/s);
     });
 
     it("не перезаписывает если блок уже установлен", () => {

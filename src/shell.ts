@@ -12,10 +12,10 @@ const BASH_FUNCTION = `opencode() {
   local _sync_log="${SYNC_LOG_POSIX}"
   mkdir -p "$(dirname "$_sync_log")" 2>/dev/null
   command opencode-sync pull 2>>"$_sync_log" || echo "opencode-sync: ошибка pull (подробности: $_sync_log)" >&2
+  trap 'command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: $_sync_log)" >&2' EXIT
   command opencode "$@"
-  local exit_code=$?
-  command opencode-sync push 2>>"$_sync_log" || echo "opencode-sync: ошибка push (подробности: $_sync_log)" >&2
-  return $exit_code
+  local _exit=$?
+  return $_exit
 }`;
 
 const FISH_FUNCTION = `function opencode
@@ -33,10 +33,13 @@ const PS_FUNCTION = `function opencode {
     New-Item -ItemType Directory -Force (Split-Path $syncLog) | Out-Null
     opencode-sync pull 2>>$syncLog
     if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка pull (подробности: $syncLog)" }
-    opencode.exe @args
-    $exit_code = $LASTEXITCODE
-    opencode-sync push 2>>$syncLog
-    if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка push (подробности: $syncLog)" }
+    try {
+        opencode.exe @args
+        $exit_code = $LASTEXITCODE
+    } finally {
+        opencode-sync push 2>>$syncLog
+        if ($LASTEXITCODE -ne 0) { Write-Error "opencode-sync: ошибка push (подробности: $syncLog)" }
+    }
     return $exit_code
 }`;
 
