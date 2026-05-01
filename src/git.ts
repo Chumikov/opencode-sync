@@ -12,6 +12,8 @@ Thumbs.db
 *.tmp
 *.bak
 *~
+sync.log
+.opencode-sync.lock
 `;
 
 function runGit(args: string[], cwd?: string): string {

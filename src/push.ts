@@ -1,4 +1,4 @@
-import { unlinkSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, sessionsDir } from "./config.js";
 import { ensureRepo, push as gitPush, preflightCheck } from "./git.js";
@@ -54,6 +54,24 @@ export async function pushSessions(options?: {
     log("[push] Первый push — экспорт всех сессий без фильтрации по scope");
   }
 
+  if (!isFirstPush) {
+    const oldManifest = readManifest(config.localPath, config.deviceName);
+    const scopedIds = new Set(scopedSessions.map((s) => s.id));
+    let recovered = 0;
+    for (const s of allSessions) {
+      if (!s.id || scopedIds.has(s.id)) continue;
+      if (!oldManifest.has(s.id)) continue;
+      const filePath = join(sessionsDir(config.localPath), s.projectId || "global", `${s.id}.json`);
+      if (!existsSync(filePath)) {
+        scopedSessions.push(s);
+        recovered++;
+      }
+    }
+    if (recovered > 0) {
+      log(`[push] Recovery: ${recovered} сессий без файлов в репо, повторный экспорт`);
+    }
+  }
+
   const freshnessMap = new Map<string, boolean>();
   for (const s of scopedSessions) {
     if (!s.id) {
@@ -68,6 +86,7 @@ export async function pushSessions(options?: {
   console.log(`Push: ${scopedSessions.length} сессий (scope: ${scopeProjectId(scope)}), ${newCount} новых/изменённых`);
 
   const toExport: SessionInfo[] = [];
+  const exportedIds = new Set<string>();
 
   for (const session of scopedSessions) {
     if (!session.id || !freshnessMap.get(session.id)) {
@@ -91,16 +110,17 @@ export async function pushSessions(options?: {
     const exportResults = await promisePool(toExport, EXPORT_CONCURRENCY, async (session) => {
       try {
         const data = await exportSessionAsync(session.id);
-        if (!data) return { kind: "skipped" as const };
+        if (!data) return { kind: "skipped" as const, id: session.id };
         saveSessionToFile(data, config.localPath);
+        exportedIds.add(session.id);
         done++;
         process.stdout.write(`\r  Экспорт: ${done}/${total}`);
-        return { kind: "exported" as const };
+        return { kind: "exported" as const, id: session.id };
       } catch (err: any) {
         done++;
         process.stdout.write(`\r  Экспорт: ${done}/${total}`);
         log(`  ✗ ${session.title}: ${err.message}`);
-        return { kind: "error" as const };
+        return { kind: "error" as const, id: session.id };
       }
     });
 
@@ -117,13 +137,22 @@ export async function pushSessions(options?: {
     const localIds = new Set(allSessions.filter((s) => s.id).map((s) => s.id));
     const oldManifest = readManifest(config.localPath, config.deviceName);
 
+    const syncedIds = new Set<string>();
+    for (const s of allSessions) {
+      if (!s.id || !localIds.has(s.id)) continue;
+      const filePath = join(sessionsDir(config.localPath), s.projectId || "global", `${s.id}.json`);
+      if (exportedIds?.has(s.id) || existsSync(filePath)) {
+        syncedIds.add(s.id);
+      }
+    }
+
     const removedIds = [...oldManifest].filter((id) => !localIds.has(id));
     if (removedIds.length > 0) {
       addToDeletedSet(config.localPath, config.deviceName, removedIds);
       log(`[push] ${removedIds.length} сессий удалено, добавлено в deleted set`);
     }
 
-    writeManifest(config.localPath, config.deviceName, localIds);
+    writeManifest(config.localPath, config.deviceName, syncedIds);
 
     const globalAlive = getGlobalSessionSet(config.localPath);
     const scopedSessDir = join(sessionsDir(config.localPath), scopeProjectId(scope));
